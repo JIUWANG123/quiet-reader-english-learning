@@ -1,6 +1,8 @@
 {
   "extends": "expo/tsconfig.base",
   "compilerOptions": {
-    "strict": true
-  }
+    "strict": true,
+    "types": ["react", "react-native", "node"]
+  },
+  "exclude": ["node_modules", ".test-build", "android", "ios", "dist"]
 }

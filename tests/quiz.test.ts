@@ -1,0 +1,15 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {quizChoices,sameAnswer,clozeSentence} from '../src/features/vocabulary/quiz';
+test('late queue card is always an option, duplicates and blanks are removed',()=>{
+ const options=quizChoices('teeth',['a','b','c','d','TEETH','','a'],()=>0.4);
+ assert.equal(options.length,4);assert.ok(options.includes('teeth'));assert.equal(new Set(options.map(x=>x.toLowerCase())).size,4);
+ assert.deepEqual(quizChoices('teeth',['TEETH','']),['teeth']);
+});
+test('spelling tolerates case and surrounding spaces but rejects wrong words',()=>{
+ assert.ok(sameAnswer('  Teeth ','teeth'));assert.equal(sameAnswer('tooth','teeth'),false);
+});
+test('cloze preserves surrounding words and hides all exact target tokens',()=>{
+ assert.equal(clozeSentence('The cat sat by a cathedral. Cat!',['cat']),'The ______ sat by a cathedral. ______!');
+ assert.equal(clozeSentence('Nothing matches.',['cat']),null);
+});

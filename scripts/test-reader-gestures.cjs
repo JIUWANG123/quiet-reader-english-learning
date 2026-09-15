@@ -1,0 +1,64 @@
+const fs=require('fs'),assert=require('node:assert/strict');
+const {chromium}=require(process.env.PLAYWRIGHT_PATH);
+const ts=require('typescript');
+(async()=>{
+ const browser=await chromium.launch({executablePath:'C:/Program Files/Google/Chrome/Application/chrome.exe',headless:true});
+ try{
+ const page=await browser.newPage({viewport:{width:390,height:800}});
+ const compiled=ts.transpileModule(fs.readFileSync('src/features/reader/readingBridge.ts','utf8'),{compilerOptions:{target:ts.ScriptTarget.ES2020,module:ts.ModuleKind.CommonJS}}).outputText;
+ await page.setContent('<style>body{margin:30px}p{font:22px/2 serif}</style><p>She found herself strangely reluctant to leave.</p>');
+ await page.evaluate(()=>{window.messages=[];window.qrReadingMode='swipe';window.ReactNativeWebView={postMessage:s=>window.messages.push(JSON.parse(s))};});
+ await page.addScriptTag({content:`var exports={};${compiled};exports.readingBridge();`});
+ const touch=async(type,x,y)=>page.evaluate(({type,x,y})=>document.dispatchEvent(new TouchEvent(type,{touches:type==='touchend'?[]:[new Touch({identifier:1,target:document.body,clientX:x,clientY:y})],changedTouches:[new Touch({identifier:1,target:document.body,clientX:x,clientY:y})],bubbles:true})),{type,x,y});
+ await touch('touchstart',300,50);await touch('touchmove',180,50);await touch('touchend',180,50);
+ await page.evaluate(()=>document.dispatchEvent(new MouseEvent('contextmenu',{clientX:180,clientY:50,cancelable:true})));
+ await page.waitForTimeout(800);
+ assert.equal(await page.evaluate(()=>getSelection().toString()),'');
+ assert.equal(await page.evaluate(()=>messages.filter(m=>m.type==='qr-turn').length),1);
+ await touch('touchstart',300,50);await touch('touchmove',299,100);await touch('touchmove',170,105);await touch('touchend',170,105);
+ assert.equal(await page.evaluate(()=>messages.filter(m=>m.type==='qr-turn').length),1);
+ await page.waitForTimeout(800);await page.mouse.click(200,500);
+ assert.equal(await page.evaluate(()=>messages.filter(m=>m.type==='qr-toggle-ui').length),1);
+ await touch('touchstart',80,50);await page.waitForTimeout(700);assert.equal(await page.evaluate(()=>getSelection().toString()),'');await page.waitForTimeout(450);await touch('touchend',80,50);
+ assert.match(await page.evaluate(()=>getSelection().toString()),/She found herself/);
+ await touch('touchstart',300,50);await touch('touchmove',100,50);await touch('touchend',100,50);
+ assert.equal(await page.evaluate(()=>messages.filter(m=>m.type==='qr-turn').length),1);
+ await page.waitForTimeout(800);await page.mouse.click(200,500);
+ assert.equal(await page.evaluate(()=>getSelection().toString()),'');
+ assert.equal(await page.evaluate(()=>messages.filter(m=>m.type==='qr-toggle-ui').length),1);
+ const cdp=await page.context().newCDPSession(page);
+ await cdp.send('Emulation.setTouchEmulationEnabled',{enabled:true});
+ await cdp.send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[{x:300,y:200}]});
+ for(let x=280;x>=100;x-=20){await cdp.send('Input.dispatchTouchEvent',{type:'touchMove',touchPoints:[{x,y:200}]});await page.waitForTimeout(20);}
+ await cdp.send('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});
+ assert.equal(await page.evaluate(()=>messages.filter(m=>m.type==='qr-turn').length),2);
+ await page.waitForTimeout(800);await touch('touchstart',80,50);await page.waitForTimeout(700);assert.equal(await page.evaluate(()=>getSelection().toString()),'');await page.waitForTimeout(450);await touch('touchend',80,50);
+ const original=await page.evaluate(()=>getSelection().toString());assert.ok(original.length>10);
+ assert.equal(await page.locator('[data-qr-handle]:visible').count(),2);
+ await page.evaluate(()=>{
+  const h=document.querySelector('[data-qr-handle="end"]');
+  const emit=(type,x,y)=>h.dispatchEvent(new TouchEvent(type,{touches:type==='touchend'?[]:[new Touch({identifier:2,target:h,clientX:x,clientY:y})],changedTouches:[new Touch({identifier:2,target:h,clientX:x,clientY:y})],bubbles:true,cancelable:true}));
+  emit('touchstart',200,90);emit('touchmove',155,65);emit('touchend',155,65);
+ });
+ assert.ok(await page.evaluate(()=>getSelection().toString().length)>0);
+ assert.ok((await page.evaluate(()=>getSelection().toString())).length<original.length);
+ await page.evaluate(()=>{getSelection().removeAllRanges();window.qrReader.attach(document,'test');window.qrReader.setSentenceMarks([{section_key:'test',start_offset:0,end_offset:document.querySelector('p').textContent.length,text:document.querySelector('p').textContent,style:'underline',color:'#8899aa',is_note:1}]);});
+ await page.waitForTimeout(650);await page.mouse.click(80,50);
+ assert.equal(await page.evaluate(()=>messages.filter(m=>m.action==='mark').length),1);
+ await page.evaluate(()=>{getSelection().removeAllRanges();document.documentElement.classList.remove('qr-selecting');const r=document.createRange();r.selectNodeContents(document.querySelector('p'));getSelection().addRange(r);});
+ await page.waitForTimeout(150);assert.equal(await page.evaluate(()=>getSelection().toString()),'');
+ await touch('touchstart',80,50);await page.waitForTimeout(650);await touch('touchmove',100,50);await page.waitForTimeout(750);await touch('touchend',100,50);assert.equal(await page.evaluate(()=>getSelection().toString()),'');
+ await touch('touchstart',80,50);await page.waitForTimeout(650);await page.evaluate(()=>window.qrReader.cancelPendingSelection());await page.waitForTimeout(750);await touch('touchend',80,50);assert.equal(await page.evaluate(()=>getSelection().toString()),'');
+ await page.evaluate(()=>{window.qrReader.setMarks([{lemma:'reluctant',forms:['reluctant'],style:'highlight',color:'#ffe082',show_meaning:1,contextual_meaning:'adj.不情愿'}]);});await page.waitForTimeout(80);
+ assert.equal(await page.locator('.qr-meaning').count(),1);
+ await page.evaluate(()=>{window.labelBefore=document.querySelector('.qr-meaning');window.qrReader.setMeaningsVisible(false);});
+ assert.equal(await page.locator('.qr-meaning').isVisible(),false);
+ await page.evaluate(()=>window.qrReader.setMeaningsVisible(true));
+ assert.equal(await page.locator('.qr-meaning').isVisible(),true);
+ assert.equal(await page.evaluate(()=>window.labelBefore===document.querySelector('.qr-meaning')),true);
+ await touch('touchstart',200,650);await page.waitForTimeout(1100);await touch('touchend',200,650);
+ assert.equal(await page.evaluate(()=>document.documentElement.classList.contains('qr-selecting')),false,'blank hold never leaves native selection enabled');
+ assert.equal(await page.evaluate(()=>getSelection().toString()),'');
+ console.log('PASS: trusted browser touch swipe; swipe/contextmenu, direction lock, single blank tap, long press, selection paging lock, outside dismissal');
+ }finally{await browser.close();}
+})().catch(e=>{console.error(e);process.exitCode=1;});

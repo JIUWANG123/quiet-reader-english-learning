@@ -32,10 +32,23 @@ yarn-error.*
 
 # local env files
 .env*.local
+.env
+.env.*
+!.env.example
+*.db
+!assets/dictionary/*.db
 
 # typescript
 *.tsbuildinfo
+.test-build/
 
 # generated native folders
 /ios
 /android
+
+# Local build output and credentials
+*.log
+*.apk
+*.aab
+*.keystore
+

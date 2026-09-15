@@ -1,0 +1,32 @@
+const fs=require('fs'),path=require('path'),url=require('url'),assert=require('node:assert/strict'),ts=require('typescript'),{DatabaseSync}=require('node:sqlite');
+const root=fs.mkdtempSync(path.resolve('../qr-build-temp-3/search-test-'));let reads=0;
+class File{constructor(...parts){this.path=path.join(...parts.map(p=>typeof p==='string'?(p.startsWith('file:')?url.fileURLToPath(p):p):p.path));this.uri=url.pathToFileURL(this.path).href;}get exists(){return fs.existsSync(this.path)}get size(){return fs.statSync(this.path).size}get modificationTime(){return fs.statSync(this.path).mtimeMs}async text(){reads++;return fs.readFileSync(this.path,'utf8')}}
+const native=new DatabaseSync(':memory:');
+const db={execAsync:async sql=>native.exec(sql),runAsync:async(sql,...args)=>native.prepare(sql).run(...args),getAllAsync:async(sql,...args)=>native.prepare(sql).all(...args),getFirstAsync:async(sql,...args)=>native.prepare(sql).get(...args),getEachAsync:async function*(sql,...args){for(const row of native.prepare(sql).iterate(...args))yield row;},withTransactionAsync:async fn=>{native.exec('BEGIN');try{await fn();native.exec('COMMIT');}catch(e){native.exec('ROLLBACK');throw e;}}};
+const out={};new Function('exports','require',ts.transpileModule(fs.readFileSync('src/services/books/search.ts','utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText)(out,name=>name==='expo-file-system'?{File,Paths:{document:root}}:name==='expo-sqlite'?{openDatabaseAsync:async()=>db}:name.includes('epubResources')?{prepareEpubResources:async()=>url.pathToFileURL(path.join(root,'book.opf')).href}:name==='./searchText'?require('../.test-build/src/services/books/searchText'):require(name));
+(async()=>{try{
+fs.mkdirSync(path.join(root,'books'));fs.writeFileSync(path.join(root,'books','book.epub'),'fixture');
+fs.writeFileSync(path.join(root,'book.opf'),'<package><manifest><item href="c0.xhtml" id="a"/><item id="b" href="c1.xhtml"/></manifest><spine><itemref idref="a"/><itemref idref="b"/></spine></package>');
+fs.writeFileSync(path.join(root,'c0.xhtml'),'<html><body><p>He was <em>reluctant</em>. He was reluctant.</p></body></html>');
+fs.writeFileSync(path.join(root,'c1.xhtml'),'<html><body><p>Absorb 100% 吸血鬼.</p></body></html>');
+const book={id:'book',format:'epub',file_name:'book.epub',created_at:1};
+const interrupted=new AbortController();await out.indexBook({},book,interrupted.signal,(done)=>{if(done===1)interrupted.abort();});assert.equal(native.prepare('SELECT count(*) n FROM indexed_sections').get().n,1);
+const controller=new AbortController();await out.indexBook({},book,controller.signal,()=>{});assert.equal(native.prepare('SELECT count(*) n FROM indexed_sections').get().n,2);
+const prior=reads;await out.indexBook({},book,controller.signal,()=>{});assert.equal(reads,prior);
+const hits=await out.searchBook('book','reluctant',true,30,controller.signal);assert.equal(hits.length,2);assert.ok(hits[1].offset>hits[0].offset);
+assert.equal((await out.searchBook('book','吸血鬼',false,30,controller.signal))[0].section,1);
+assert.equal((await out.searchBook('book','100%',false,30,controller.signal)).length,1);
+assert.equal((await out.searchBook('other','reluctant',false,30,controller.signal)).length,0);
+native.prepare('DELETE FROM indexed_books').run();
+native.prepare('DELETE FROM indexed_sections').run();
+native.prepare('DELETE FROM passages').run();
+const closed=new AbortController();
+const background=out.ensureBookIndex({},book,closed.signal,done=>{if(done===1)closed.abort();});
+await background;
+assert.equal(native.prepare('SELECT count(*) n FROM indexed_sections').get().n,2);
+assert.equal(native.prepare('SELECT count(*) n FROM indexed_books').get().n,1);
+const warmReads=reads;let callbacks=0;
+await out.ensureBookIndex({},book,new AbortController().signal,()=>callbacks++);
+assert.equal(reads,warmReads);assert.equal(callbacks,0);
+console.log('PASS: close window continues indexing; completed index reads zero files; indexing resumes, warm index skips chapter reads, repeated offsets, Chinese, literal percent and book isolation.');
+}finally{native.close();if(root.startsWith(path.resolve('../qr-build-temp-3')+path.sep))fs.rmSync(root,{recursive:true,force:true});}})().catch(e=>{console.error(e);process.exitCode=1;});
