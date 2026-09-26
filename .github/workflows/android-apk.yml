@@ -20,8 +20,8 @@ jobs:
       - run: npm ci
       - run: npx expo prebuild --platform android --no-install
       - run: chmod +x android/gradlew
-      - run: cd android && ./gradlew assembleRelease --no-daemon --console=plain --stacktrace
+      - run: cd android && ./gradlew assembleDebug --no-daemon --console=plain --stacktrace --max-workers=2
       - uses: actions/upload-artifact@v4
         with:
           name: quiet-reader-1.11.2-apk
-          path: android/app/build/outputs/apk/release/*.apk
+          path: android/app/build/outputs/apk/debug/*.apk
