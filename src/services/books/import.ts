@@ -42,6 +42,10 @@ export async function importBook(db: SQLiteDatabase) {
         for (let i = 0; i < pages.length; i++) await statement.executeAsync([id, i, pages[i].text, pages[i].heading]);
       } finally { await statement.finalizeAsync(); }
     });
+    if (format === 'epub') {
+      const { startEpubWarmup } = await import('./warmup');
+      startEpubWarmup(id, destination.uri);
+    }
     return { id, format };
   } catch (error) {
     if (destination?.exists) destination.delete();
