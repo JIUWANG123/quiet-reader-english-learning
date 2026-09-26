@@ -1,0 +1,26 @@
+name: Android APK
+on:
+  workflow_dispatch:
+  push:
+    branches: [master]
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - run: npm ci
+      - run: npx expo prebuild --platform android --no-install
+      - run: chmod +x android/gradlew
+      - run: cd android && ./gradlew assembleRelease
+      - uses: actions/upload-artifact@v4
+        with:
+          name: quiet-reader-1.11.2-apk
+          path: android/app/build/outputs/apk/release/*.apk
