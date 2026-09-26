@@ -7,15 +7,37 @@ export const epubParagraphBridge = String.raw`
   function publish(id,item){var state={open:item.open,value:item.value,error:item.error};states.set(id,state);window.ReactNativeWebView.postMessage(JSON.stringify({type:'qr-paragraph-state',id:id,state:state}));}
   function paint(item,state){item.pending=false;item.open=Boolean(state.open);item.value=state.value||'';item.error=Boolean(state.error);item.box.textContent=item.value;item.box.hidden=!item.open;item.button.textContent=item.error?'重试':item.open?'收起':'译';item.button.setAttribute('aria-expanded',String(item.open));}
   function layoutKey(){window.qrParagraphLayoutKey=JSON.stringify([visible,Array.from(states.entries()).sort(function(a,b){return a[0].localeCompare(b[0]);})]);}
-  var layoutTimer;
-  function relayout(content){
-    layoutKey();content.window.dispatchEvent(new Event('resize'));
+  var layoutTimer,layoutEpoch=0,stableEpoch=0,pendingLayout=false,internalResize=new WeakSet();
+  function validLocation(location){return Boolean(location&&location.start&&location.start.cfi);}
+  function whenLayoutStable(isCurrent){
+    if(isCurrent&&!isCurrent())return Promise.resolve(false);
+    if(!pendingLayout)return Promise.resolve(true);
+    return new Promise(function(resolve,reject){
+      var done=false,frame,watchdog=setTimeout(function(){finish(Error('LAYOUT_TIMEOUT'));},3000);
+      function finish(error,value){if(done)return;done=true;clearTimeout(watchdog);if(frame)cancelAnimationFrame(frame);if(error)reject(error);else resolve(value);}
+      function check(){
+        if(isCurrent&&!isCurrent()){finish(null,false);return;}
+        if(!pendingLayout&&stableEpoch===layoutEpoch){finish(null,true);return;}
+        frame=requestAnimationFrame(check);
+      }
+      check();
+    });
+  }
+  function relayout(content,fromResize){
+    layoutKey();layoutEpoch++;pendingLayout=true;
+    if(!fromResize){internalResize.add(content.window);try{content.window.dispatchEvent(new Event('resize'));}finally{internalResize.delete(content.window);}}
     clearTimeout(layoutTimer);
     layoutTimer=setTimeout(async function(){
+      var epoch=layoutEpoch;
       try{await new Promise(function(resolve){requestAnimationFrame(function(){requestAnimationFrame(resolve);});});
-        if(!window.qrVisualPosition)return;
-        var location=window.qrVisualPosition.capture(rendition.located(await rendition.manager.currentLocation()));
-        window.ReactNativeWebView.postMessage(JSON.stringify({type:'qr-paragraph-layout',location:location}));
+        if(epoch!==layoutEpoch)return;
+        var location=rendition.located(await rendition.manager.currentLocation());
+        if(epoch!==layoutEpoch)return;
+        if(!validLocation(location))return;
+        if(window.qrVisualPosition)location=window.qrVisualPosition.capture(location);
+        if(epoch!==layoutEpoch)return;
+        stableEpoch=epoch;pendingLayout=false;
+        window.ReactNativeWebView.postMessage(JSON.stringify({type:'qr-paragraph-layout',layoutEpoch:epoch,location:location}));
       }catch(error){}
     },100);
   }
@@ -49,8 +71,10 @@ export const epubParagraphBridge = String.raw`
     });
     // Drop detached documents so turning through a book cannot retain its entire DOM.
     entries.forEach(function(item,id){if(item.doc!==doc&&(!item.doc.defaultView||!item.doc.defaultView.frameElement?.isConnected))entries.delete(id);});
+    if(!content.window.__qrParagraphResizeHook){content.window.__qrParagraphResizeHook=true;content.window.addEventListener('resize',function(){if(!internalResize.has(content.window))relayout(content,true);});}
+    if(visible&&paragraphs.length)relayout(content);
   }
-  window.qrEpubParagraphs={attach:attach,sync:function(snapshot){Object.keys(snapshot).forEach(function(id){var state=snapshot[id],old=states.get(id);states.set(id,state);var item=entries.get(id);if(item&&(!old||old.open!==state.open||old.value!==state.value||old.error!==state.error)){paint(item,state);relayout(item.content);}});layoutKey();},setVisible:function(value){
+  window.qrEpubParagraphs={attach:attach,whenLayoutStable:whenLayoutStable,get layoutEpoch(){return layoutEpoch;},get stableEpoch(){return stableEpoch;},get pendingLayout(){return pendingLayout;},sync:function(snapshot){Object.keys(snapshot).forEach(function(id){var state=snapshot[id],old=states.get(id);states.set(id,state);var item=entries.get(id);if(item&&(!old||old.open!==state.open||old.value!==state.value||old.error!==state.error)){paint(item,state);relayout(item.content);}});layoutKey();},setVisible:function(value){
     value=Boolean(value);if(value===visible)return;visible=value;
     var contents=new Set();
     entries.forEach(function(item){
@@ -58,7 +82,7 @@ export const epubParagraphBridge = String.raw`
       // Hiding controls does not discard the shared paragraph expansion state.
       contents.add(item.content);
     });
-    contents.forEach(relayout);
+    contents.forEach(function(content){relayout(content);});
   },reply:function(id,text,error){
     var item=entries.get(id);if(!item)return;
     item.pending=false;item.error=error;item.value=text;

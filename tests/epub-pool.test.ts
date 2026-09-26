@@ -15,6 +15,8 @@ test('EPUB pool can rotate repeatedly without losing the current page',()=>{
 
 test('fifty turns reuse three identities and invalidate recycled locations',()=>{
  let p=readyEpubDocument(createEpubPool('a'),'0',loc('a'));
+ p=readyEpubDocument(p,p.next!.id,loc('b'));
+ p=readyEpubDocument(p,p.previous!.id,loc('before'));
  const ids=new Set([p.current.id,p.previous!.id,p.next!.id]);
  for(let i=0;i<50;i++){
   p=readyEpubDocument(p,p.next!.id,loc('page-'+i));

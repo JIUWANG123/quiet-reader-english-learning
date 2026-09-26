@@ -1,5 +1,6 @@
 import JSZip from 'jszip';
 import {Directory,File,Paths} from 'expo-file-system';
+import {traceReading} from './diagnostics';
 
 const pending=new Map<string,Promise<string>>();
 // Keep OPF/spine order and XHTML untouched so CFI notes and bookmarks remain valid.
@@ -14,12 +15,17 @@ function safeParts(path:string){
  const parts=path.split('/');if(parts.some(p=>!p||p==='.'||p==='..'))throw Error('Invalid EPUB resource path');return parts;
 }
 async function prepare(source:string){
+ const startedAt=Date.now();
  const archive=new File(source);
  const root=new Directory(Paths.cache,'epub-resources',encodeURIComponent(archive.name));
  const fingerprint=JSON.stringify([archive.size,archive.modificationTime,2]);
  const marker=new File(root,'ready.json');
- try{if(marker.exists){const saved=JSON.parse(await marker.text());const opf=new File(root,...safeParts(saved.opf));if(saved.fingerprint===fingerprint&&opf.exists&&Array.isArray(saved.files)&&saved.files.length&&saved.files.every((entry:{path:string;size:number})=>{const file=new File(root,...safeParts(entry.path));return file.exists&&file.size===entry.size;}))return opf.uri;}}catch{/* An interrupted cache is rebuilt from the original archive. */}
+ try{if(marker.exists){const saved=JSON.parse(await marker.text());const opf=new File(root,...safeParts(saved.opf));if(saved.fingerprint===fingerprint&&opf.exists&&Array.isArray(saved.files)&&saved.files.length&&saved.files.every((entry:{path:string;size:number})=>{const file=new File(root,...safeParts(entry.path));return file.exists&&file.size===entry.size;})){
+   traceReading('resource-prepare',{cacheHit:true,archiveSize:archive.size,extractedSize:saved.files.reduce((sum:number,entry:{size:number})=>sum+entry.size,0),duration:Date.now()-startedAt});
+   return opf.uri;
+  }}}catch{/* An interrupted cache is rebuilt from the original archive. */}
  root.create({intermediates:true,idempotent:true});
+ const unzipStartedAt=Date.now();
  const zip=await JSZip.loadAsync(await archive.arrayBuffer());
  const container=await zip.file('META-INF/container.xml')?.async('string');
  const opfPath=container?.match(/<rootfile\b[^>]*\bfull-path\s*=\s*["']([^"']+)["']/i)?.[1]?.replace(/&amp;/g,'&');
@@ -40,5 +46,6 @@ async function prepare(source:string){
  }
  // Commit last: a killed app cannot mistake a partial extraction for a cache hit.
  marker.write(JSON.stringify({fingerprint,opf:opfPath,files}));
+ traceReading('resource-prepare',{cacheHit:false,archiveSize:archive.size,extractedSize:total,unzipDuration:Date.now()-unzipStartedAt,duration:Date.now()-startedAt});
  return new File(root,...safeParts(opfPath)).uri;
 }

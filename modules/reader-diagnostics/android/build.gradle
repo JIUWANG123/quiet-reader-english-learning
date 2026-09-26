@@ -1,0 +1,13 @@
+plugins {
+  id 'com.android.library'
+  id 'expo-module-gradle-plugin'
+}
+group = 'expo.modules.readerdiagnostics'
+version = '1.0.0'
+android {
+  namespace 'expo.modules.readerdiagnostics'
+  defaultConfig {
+    versionCode 1
+    versionName '1.0.0'
+  }
+}

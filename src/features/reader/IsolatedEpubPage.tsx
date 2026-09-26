@@ -4,14 +4,14 @@ import {useEpubFileSystem} from './useEpubFileSystem';
 import {locationCache} from './epubLocationCache';
 
 export type EpubPageController=ReturnType<typeof useReader>;
-type Props=Omit<ReaderProps,'fileSystem'> & {runtimeId:string;startupAnchor?:string|null;generateLocations?:boolean;navigationRevision?:number;navigationJavascript?:string;controllerRef:Ref<EpubPageController>};
+type Props=Omit<ReaderProps,'fileSystem'> & {runtimeId:string;startupAnchor?:string|null;generateLocations?:boolean;navigationEnabled?:boolean;navigationRevision?:number;navigationJavascript?:string;controllerRef:Ref<EpubPageController>};
 
 /** Providers follow document identity, not visual slot. Promoting a prepared
  * page keeps its WebView and selection/CFI state instead of mounting a reader. */
 export function IsolatedEpubPage(props:Props){
   return <ReaderProvider><Page {...props}/></ReaderProvider>;
 }
-function Page({runtimeId,startupAnchor,generateLocations=true,navigationRevision=0,navigationJavascript,controllerRef,...props}:Props){
+function Page({runtimeId,startupAnchor,generateLocations=true,navigationEnabled=true,navigationRevision=0,navigationJavascript,controllerRef,...props}:Props){
   const controller=useReader();
   const cache=useMemo(()=>locationCache(props.src,props.charactersPerLocation??1600),[props.src,props.charactersPerLocation]);
   // Keep this snapshot stable: changing initialLocations reloads upstream Reader.
@@ -22,7 +22,7 @@ function Page({runtimeId,startupAnchor,generateLocations=true,navigationRevision
   pendingNavigation.current={revision:navigationRevision,script:navigationJavascript??props.injectedJavascript};
   function applyPendingNavigation(){
     const pending=pendingNavigation.current;
-    if(!initialized.current||appliedRevision.current===pending.revision||!pending.script)return;
+    if(!navigationEnabled||!initialized.current||appliedRevision.current===pending.revision||!pending.script)return;
     controller.injectJavascript(pending.script);appliedRevision.current=pending.revision;
   }
   useImperativeHandle(controllerRef,()=>controller,[controller]);
@@ -30,7 +30,7 @@ function Page({runtimeId,startupAnchor,generateLocations=true,navigationRevision
   const fileSystem=useMemo(()=>function usePageFileSystem(){return useEpubFileSystem(runtimeId,startup.current);},[runtimeId]);
   useEffect(()=>{
     applyPendingNavigation();
-  },[navigationRevision,controller,navigationJavascript,props.injectedJavascript]);
+  },[navigationEnabled,navigationRevision,controller,navigationJavascript,props.injectedJavascript]);
   return <Reader {...props} initialLocations={cachedLocations as unknown as ReaderProps['initialLocations']} fileSystem={fileSystem} onLocationsReady={(key,locations)=>{
     cache.write(locations);props.onLocationsReady?.(key,locations);
   }} onReady={(...args)=>{

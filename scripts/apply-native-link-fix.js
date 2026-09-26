@@ -4,6 +4,31 @@ const path = require('node:path');
 const edits = [
   {
     file: 'node_modules/@epubjs-react-native/core/lib/commonjs/View.js',
+    before: '  onWebViewMessage,\n  waitForLocationsReady',
+    after: '  onWebViewMessage,\n  onRenderProcessGone,\n  waitForLocationsReady',
+  },
+  {
+    file: 'node_modules/@epubjs-react-native/core/lib/commonjs/View.js',
+    before: '    onMessage: onMessage,\n    menuItems:',
+    after: '    onMessage: onMessage,\n    onRenderProcessGone: onRenderProcessGone,\n    menuItems:',
+  },
+  {
+    file: 'node_modules/@epubjs-react-native/core/lib/module/View.js',
+    before: '  onWebViewMessage,\n  waitForLocationsReady',
+    after: '  onWebViewMessage,\n  onRenderProcessGone,\n  waitForLocationsReady',
+  },
+  {
+    file: 'node_modules/@epubjs-react-native/core/lib/module/View.js',
+    before: '    onMessage: onMessage,\n    menuItems:',
+    after: '    onMessage: onMessage,\n    onRenderProcessGone: onRenderProcessGone,\n    menuItems:',
+  },
+  {
+    file: 'node_modules/@epubjs-react-native/core/lib/typescript/types.d.ts',
+    before: '    onWebViewMessage?: (event: any) => void;',
+    after: '    onWebViewMessage?: (event: any) => void;\n    onRenderProcessGone?: (event: { nativeEvent: { didCrash: boolean } }) => void;',
+  },
+  {
+    file: 'node_modules/@epubjs-react-native/core/lib/commonjs/View.js',
     before: 'createElement(_GestureHandler.GestureHandler, {\n    width:',
     after: 'createElement(_GestureHandler.GestureHandler, {\n    enabled: enableSwipe,\n    width:',
   },
