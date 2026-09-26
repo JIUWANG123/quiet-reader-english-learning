@@ -16,3 +16,10 @@ test('does not claim recovery success if both writes fail',async()=>{
  let message='';const saver=createProgressSaver({journal:()=>{throw Error('disk full');},save:async()=>{throw Error('disk full');},onError:m=>message=m});
  saver.stage(position(4));await saver.flush();assert.equal(message,'位置未保存，请重试。');await saver.close();
 });
+
+test('identical positions do not repeat database or recovery writes',async()=>{
+ const writes:number[]=[],journals:number[]=[];
+ const saver=createProgressSaver({save:async p=>{writes.push(p.updated);},journal:p=>journals.push(p.updated),onError:()=>{}});
+ saver.stage(position(1));await saver.flush();saver.stage({...position(1),updated:2});await saver.flush();await saver.close();
+ assert.deepEqual(writes,[1]);assert.deepEqual(journals,[1]);
+});

@@ -50,3 +50,14 @@ test('a stalled preview times out and cannot later commit a stale ready result',
 
 
 
+
+test('cancelled preview cannot start queued navigation on recycled rendition',async()=>{
+ let steps=0;const context:any={setTimeout,clearTimeout,requestAnimationFrame:(fn:()=>void)=>fn(),ReactNativeWebView:{postMessage:()=>{}},rendition:{next:async()=>{steps++;},manager:{currentLocation:async()=>[]},located:()=>({start:{cfi:'late'}})}};
+ context.window=context;vm.runInNewContext(epubPreviewBoot(1,7),context);
+ context.ReactNativeWebView.postMessage(JSON.stringify({type:'qr-position-ready',location:{start:{cfi:'anchor'}}}));context.qrCancelPreview();
+ await new Promise<void>(resolve=>setImmediate(resolve));assert.equal(steps,0);
+});
+
+test('preview paints in its WebView without a second native bridge round trip',async()=>{
+ const sent:any[]=[],painted:any[]=[];const context:any={setTimeout,clearTimeout,requestAnimationFrame:(f:()=>void)=>f(),qrPaintPage:(l:any,r:number)=>painted.push({l,r}),ReactNativeWebView:{postMessage:(s:string)=>sent.push(JSON.parse(s))},rendition:{next:async()=>{},manager:{currentLocation:async()=>[]},located:()=>({start:{cfi:'next'}})}};context.window=context;vm.runInNewContext(epubPreviewBoot(1,9),context);context.ReactNativeWebView.postMessage(JSON.stringify({type:'qr-position-ready',location:{start:{cfi:'source'}}}));await new Promise<void>(r=>setImmediate(r));assert.equal(painted.length,1);assert.equal(painted[0].r,9);assert.equal(sent.length,0);
+});

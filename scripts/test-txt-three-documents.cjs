@@ -1,6 +1,6 @@
 const fs=require('node:fs'),assert=require('node:assert/strict'),ts=require('typescript');
 const {chromium}=require(process.env.PLAYWRIGHT_PATH||'C:/Users/Ciel Li/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright');
-function load(path){const result={};new Function('exports',ts.transpileModule(fs.readFileSync(path,'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS}}).outputText)(result);return result;}
+function load(path){const result={};new Function('exports','require',ts.transpileModule(fs.readFileSync(path,'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS}}).outputText)(result,name=>load(require('node:path').resolve(require('node:path').dirname(path),name+'.ts')));return result;}
 const {txtParagraphBridge}=load('src/features/reader/txtParagraphBridge.ts');
 const {txtScreenBoot}=load('src/features/reader/txtScreenBoot.ts');
 (async()=>{

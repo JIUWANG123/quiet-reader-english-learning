@@ -10,6 +10,7 @@ import type {DictionaryResult} from '../src/features/dictionary/types';
 function fixture(){
  const native=new DatabaseSync(':memory:');native.exec(schema);
  const adapter={
+  async execAsync(sql:string){native.exec(sql)},
   async getFirstAsync(sql:string,...args:(string|number|null)[]){return native.prepare(sql).get(...args)??null},
   async getAllAsync(sql:string,...args:(string|number|null)[]){return native.prepare(sql).all(...args)},
   async runAsync(sql:string,...args:(string|number|null)[]){return native.prepare(sql).run(...args)},
@@ -62,6 +63,7 @@ test('repeated marking preserves first sentence and review state',async()=>{
  await ensureVocabulary(db,result,'book','She had taken it.');await recordReview(db,'id','take','choice',3);
  await ensureVocabulary(db,result,'another','They take it.');const row=(await listVocabulary(db))[0];
  assert.equal(row.source_text,'She had taken it.');assert.equal(row.source_book_id,'book');assert.equal(row.familiarity,3);assert.equal(row.lookup_count,1);
+ assert.equal(native.prepare('SELECT count(*) n FROM study_sources').get()!.n,2);
  }finally{native.close()}
 });
 test('Anki export has two fields and escapes HTML, tabs and multiline context',()=>{

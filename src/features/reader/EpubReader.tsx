@@ -17,7 +17,7 @@ import {ReaderChrome} from './ReaderChrome';
 import type {ChapterText} from '../ai/ChapterTranslation';
 import {useVolumePageTurn} from './useVolumePageTurn';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, Alert, FlatList, Modal, ScrollView, Text, View } from 'react-native';
+import { ActivityIndicator, Alert, FlatList, Modal, ScrollView, Text, View, useWindowDimensions } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Directory, File, Paths } from 'expo-file-system';
 import { type Location, type Section, type Toc } from '@epubjs-react-native/core';
@@ -91,6 +91,30 @@ function EpubReaderSession({ preparedSource,onToggleChrome,chapterRequest,onChap
   const pendingParagraphLayout=useRef<{id:string;location:Location}|null>(null);
   const [pool,setPool]=useState(()=>createEpubPool(book.epub_location));
   const poolRef=useRef(pool);poolRef.current=pool;
+  const previewJobs=useRef(new Map<string,{started:number;timer:ReturnType<typeof setTimeout>}>());
+  const finishPreview=(id:string,revision:number)=>{const key=id+':'+revision,job=previewJobs.current.get(key);if(job){clearTimeout(job.timer);previewJobs.current.delete(key);}return job?Date.now()-job.started:undefined;};
+  const recoverPreview=(id:string,revision:number,code:string)=>{
+    if(settings.readingMode==='scroll')return;
+    const live=[poolRef.current.previous,poolRef.current.next].find(item=>item?.id===id&&(item.revision??0)===revision);
+    if(!live||live.location||live.boundary)return;
+    const duration=finishPreview(id,revision);
+    traceReading('preview-error',{bookId:book.id,cfi:live.anchor??undefined,direction:live.direction,requestId:id+':'+revision,generation:revision,duration,code});
+    if(live.retries){setFailure('相邻页加载失败，当前位置已保留。请重试恢复。');return;}
+    // A timed-out Promise may still mutate its rendition. Replace that hidden
+    // WebView instead of issuing concurrent navigation into the same instance.
+    setPool(value=>{const slot=value.previous?.id===id?'previous':value.next?.id===id?'next':null;if(!slot||(value[slot]!.revision??0)!==revision)return value;return {...value,serial:value.serial+1,[slot]:{...value[slot]!,id:String(value.serial),revision:revision+1,retries:1}};});
+  };
+  useEffect(()=>{
+    const documents=settings.readingMode==='scroll'?[]:[pool.previous,pool.next].filter(item=>item&&!item.location&&!item.boundary);
+    const keys=new Set(documents.map(item=>item!.id+':'+(item!.revision??0)));
+    for(const [key,job] of previewJobs.current){if(!keys.has(key)){clearTimeout(job.timer);previewJobs.current.delete(key);}}
+    for(const document of documents){if(!document)continue;const revision=document.revision??0,key=document.id+':'+revision;if(previewJobs.current.has(key))continue;
+      traceReading('preview-request',{bookId:book.id,cfi:document.anchor??undefined,direction:document.direction,requestId:key,generation:revision});
+      const timer=setTimeout(()=>recoverPreview(document.id,revision,'PREVIEW_TIMEOUT'),revision>0&&!document.retries?1800:8000);
+      previewJobs.current.set(key,{started:Date.now(),timer});
+    }
+  },[pool,book.id,settings.readingMode]);
+  useEffect(()=>()=>{for(const job of previewJobs.current.values())clearTimeout(job.timer);previewJobs.current.clear();},[]);
   const activeId=useRef(pool.current.id);activeId.current=pool.current.id;
   const [runtimeId]=useState(()=>`reader-${Date.now()}-${Math.random().toString(36).slice(2)}`);
   const injectJavascript=useCallback((script:string)=>controller.current?.injectJavascript(script),[]);
@@ -169,6 +193,7 @@ function EpubReaderSession({ preparedSource,onToggleChrome,chapterRequest,onChap
     // Large books generate percentage locations asynchronously. Preserve the
     // previous percentage until the index is ready; always persist the CFI.
     const safeProgress = fraction === undefined ? lastProgress.current : Math.max(0, Math.min(1, fraction || 0));
+    if(lastLocation.current===cfi&&lastProgress.current===safeProgress)return;
     lastLocation.current = cfi;
     traceReading('progress',{bookId:book.id,cfi,progress:safeProgress});
     lastProgress.current = safeProgress;
@@ -178,13 +203,22 @@ function EpubReaderSession({ preparedSource,onToggleChrome,chapterRequest,onChap
     // caches on each progress event: this renderer does not consume them.
   }, [onProgress,book.id]);
 
-  if (!new File(uri).exists) return <View style={{ padding: 30, gap: 18 }}><Text style={{ color: colors.text }}>EPUB 文件缺失，请返回书架重新导入。</Text><Button label="返回书架" onPress={leave} /></View>;
   const annotationScript=`${readingBridgeScript} rendition.getContents().forEach(function(content){window.qrReader.attach(content.document,'epub:'+content.sectionIndex);});window.qrReader.setMeaningsVisible(${meaningsVisible});window.qrReader.setMarks(${JSON.stringify(marks)});window.qrReader.setSentenceMarks(${JSON.stringify(sentenceMarks)});true;`;
+  const paintScript=`window.qrPaintPage=function(location,revision){
+    if(window.qrPreviewRevision!==revision)return;
+    try{window.qrDecoratePage?.();}catch(error){window.ReactNativeWebView.postMessage(JSON.stringify({type:'qr-preview-error',code:'DECORATION_FAILED',revision:revision}));return;}
+    requestAnimationFrame(function(){requestAnimationFrame(function(){if(window.qrPreviewRevision!==revision)return;
+      window.ReactNativeWebView.postMessage(JSON.stringify({type:'qr-page-painted',paintRevision:revision,cacheHit:Boolean(window.qrRestoreCacheHit),location:window.qrVisualPosition.capture(location)}));
+    });});
+  };window.qrDecoratePage=function(){${annotationScript}${epubPageMotion}${epubParagraphBridge}window.qrEpubParagraphs?.setVisible(${settings.paragraphTranslation});};true;`;
+  useEffect(()=>{if(ready)injectAll(paintScript);},[ready,paintScript,injectAll]);
+  if (!new File(uri).exists) return <View style={{ padding: 30, gap: 18 }}><Text style={{ color: colors.text }}>EPUB 文件缺失，请返回书架重新导入。</Text><Button label="返回书架" onPress={leave} /></View>;
   const renderPage=(slot:'previous'|'current'|'next')=>{
     const document=pool[slot];if(!document||(settings.readingMode==='scroll'&&slot!=='current'))return null;
     const active=slot==='current';
     return <IsolatedEpubPage controllerRef={value=>{if(value)controllers.current.set(document.id,value);else controllers.current.delete(document.id);if(active)controller.current=value;}} runtimeId={runtimeId+'-'+document.id}
         key={document.id+flow} navigationRevision={document.revision??0}
+        navigationJavascript={epubPreviewBoot(document.direction,document.revision??0,document.visualAnchor)+restoreEpubPosition(document.anchor,document.visualAnchor)}
         src={uri} startupAnchor={document.anchor} generateLocations={active}
         keepScrollOffsetOnLocationChange
         defaultTheme={initialTheme.current}
@@ -193,9 +227,9 @@ function EpubReaderSession({ preparedSource,onToggleChrome,chapterRequest,onChap
         enableSwipe={false}
         enableSelection
         menuItems={selectionMenu}
-        injectedJavascript={epubVisualPosition+epubPreviewBoot(document.direction,document.revision??0,document.visualAnchor)+`window.qrInteractionBlocked=false;window.qrSelectionGuard&&(window.qrSelectionGuard.locked=false);window.qrReadingMode=${JSON.stringify(settings.readingMode==='scroll'?'scroll':'native')};`+epubProgressBridge+readingBridgeScript+`if(!window.qrContentHook){window.qrContentHook=true;rendition.hooks.content.register(function(content){window.qrReader.attach(content.document,'epub:'+content.sectionIndex);});}rendition.getContents().forEach(function(content){window.qrReader.attach(content.document,'epub:'+content.sectionIndex);});true;`+epubParagraphBridge+`window.qrEpubParagraphs?.sync(${JSON.stringify(paragraphStates.current)});window.qrEpubParagraphs?.setVisible(${settings.paragraphTranslation});true;`+restoreEpubPosition(document.anchor)}
+        injectedJavascript={paintScript+epubVisualPosition+epubPreviewBoot(document.direction,document.revision??0,document.visualAnchor)+`window.qrInteractionBlocked=false;window.qrSelectionGuard&&(window.qrSelectionGuard.locked=false);window.qrReadingMode=${JSON.stringify(settings.readingMode==='scroll'?'scroll':'native')};`+epubProgressBridge+readingBridgeScript+`if(!window.qrContentHook){window.qrContentHook=true;rendition.hooks.content.register(function(content){window.qrReader.attach(content.document,'epub:'+content.sectionIndex);});}rendition.getContents().forEach(function(content){window.qrReader.attach(content.document,'epub:'+content.sectionIndex);});true;`+epubParagraphBridge+`window.qrEpubParagraphs?.sync(${JSON.stringify(paragraphStates.current)});window.qrEpubParagraphs?.setVisible(${settings.paragraphTranslation});true;`+restoreEpubPosition(document.anchor,document.visualAnchor)}
         onStarted={()=>{if(!active)return;traceReading('started',{bookId:book.id,cfi:lastLocation.current??undefined,mode:settings.readingMode});restored.current=false;setReady(false);setSelectionActive(false);setSelectedSentence(null);appliedTheme.current=initialTheme.current;}}
-        onRendered={()=>{controllers.current.get(document.id)?.injectJavascript(annotationScript);}}
+        onRendered={()=>{controllers.current.get(document.id)?.injectJavascript('window.qrDecoratePage?.();true;');}}
         onWebViewMessage={(event: unknown) => {
           const data = event as AIRequest & {type?: string; location?: Location; code?: string;revision?:number};
           const live=([poolRef.current.current,poolRef.current.previous,poolRef.current.next]).find(item=>item?.id===document.id);
@@ -203,21 +237,25 @@ function EpubReaderSession({ preparedSource,onToggleChrome,chapterRequest,onChap
           if((data?.type==='qr-preview-ready'||data?.type==='qr-position-ready')&&data.location?.start?.cfi){
             // Prepare annotations and paragraph controls before exposing a page.
             // Promotion must only change ownership, never redraw visible content.
-            controllers.current.get(document.id)?.injectJavascript(`try{${annotationScript}${epubPageMotion}${epubParagraphBridge}window.qrEpubParagraphs?.setVisible(${settings.paragraphTranslation});}catch(error){window.ReactNativeWebView.postMessage(JSON.stringify({type:'qr-decoration-error'}));}requestAnimationFrame(function(){requestAnimationFrame(function(){window.ReactNativeWebView.postMessage(JSON.stringify({type:'qr-page-painted',paintRevision:${live.revision??0},location:window.qrVisualPosition.capture(${JSON.stringify(data.location)})}));});});true;`);
+            controllers.current.get(document.id)?.injectJavascript(`try{${annotationScript}${epubPageMotion}${epubParagraphBridge}window.qrEpubParagraphs?.setVisible(${settings.paragraphTranslation});}catch(error){window.ReactNativeWebView.postMessage(JSON.stringify({type:'qr-decoration-error'}));}requestAnimationFrame(function(){requestAnimationFrame(function(){window.ReactNativeWebView.postMessage(JSON.stringify({type:'qr-page-painted',paintRevision:${live.revision??0},cacheHit:Boolean(window.qrRestoreCacheHit),location:window.qrVisualPosition.capture(${JSON.stringify(data.location)})}));});});true;`);
             return;
           }
           if(data?.type==='qr-decoration-error'){traceReading('restore-error',{bookId:book.id,code:'DECORATION_FAILED'});return;}
           if(data?.type==='qr-page-painted'&&data.location?.start?.cfi){
             if((data as any).paintRevision!==(live.revision??0))return;
-            setPool(value=>readyEpubDocument(value,document.id,data.location!));
-            traceReading('preview-ready',{bookId:book.id,cfi:data.location.start.cfi});
+            const nextPool=readyEpubDocument(poolRef.current,document.id,data.location!,(data as any).paintRevision);
+            poolRef.current=nextPool;
+            stack.current?.setReadiness(nextPool.current.id,Boolean(nextPool.previous?.location),Boolean(nextPool.next?.location));
+            setPool(nextPool);
+            traceReading('preview-ready',{bookId:book.id,cfi:live.anchor??undefined,target:data.location.start.cfi,direction:live.direction,requestId:document.id+':'+(live.revision??0),generation:live.revision??0,duration:finishPreview(document.id,live.revision??0),cacheHit:(data as any).cacheHit});
             if(document.id===activeId.current){restored.current=true;setFailure('');setReady(true);traceReading('restore-ready',{bookId:book.id,cfi:data.location.start.cfi});
               if(searchHighlight.current){const cfi=searchHighlight.current;searchHighlight.current=null;injectJavascript(`try{rendition.annotations.highlight(${JSON.stringify(cfi)},{},null,'qr-search',{'fill':'#ffe082','fill-opacity':'0.5'});setTimeout(function(){rendition.annotations.remove(${JSON.stringify(cfi)},'highlight');},5000);}catch{}true;`);}
             }
             return;
           }
           if(data?.type==='qr-preview-boundary'||data?.type==='qr-preview-error'){
-            traceReading('preview-error',{bookId:book.id,code:data.type==='qr-preview-boundary'?'PREVIEW_BOUNDARY':data.code||'PREVIEW_FAILED'});if(data.type==='qr-preview-error')setFailure('相邻页加载失败，当前位置已保留。请重试恢复。');return;
+            if(data.type==='qr-preview-error')recoverPreview(document.id,live.revision??0,data.code||'PREVIEW_FAILED');
+            else {finishPreview(document.id,live.revision??0);setPool(value=>{const slot=value.previous?.id===document.id?'previous':value.next?.id===document.id?'next':null;return slot&&(value[slot]!.revision??0)===(live.revision??0)?{...value,[slot]:{...value[slot]!,boundary:true}}:value;});}return;
           }
           // Delayed events from a previous owner must never save or open cards.
           if(document.id!==activeId.current)return;
@@ -272,7 +310,7 @@ function EpubReaderSession({ preparedSource,onToggleChrome,chapterRequest,onChap
     const next=turnEpubPool(poolRef.current,direction);if(next===poolRef.current)return;
     activeId.current=next.current.id;
     controller.current=controllers.current.get(next.current.id)??null;
-    setPool(next);setSelectedSentence(null);setSelectionActive(false);
+    poolRef.current=next;setPool(next);setSelectedSentence(null);setSelectionActive(false);
     const location=next.current.location!;
     controller.current?.injectJavascript(`window.qrPreviewPromoted=true;window.qrProgress?.start(${JSON.stringify(location)});window.qrInteractionBlocked=false;window.ReactNativeWebView.postMessage(JSON.stringify({type:'qr-exact-progress',location:${JSON.stringify(location)},fraction:book.locations.total>0?book.locations.percentageFromCfi(${JSON.stringify(location.start.cfi)}):undefined}));true;`);
     remember(location);setSection(controller.current?.section??null);
@@ -281,6 +319,7 @@ function EpubReaderSession({ preparedSource,onToggleChrome,chapterRequest,onChap
     <NativePageStack controllerRef={stack} pageKey={pool.current.id} pageIds={{previous:pool.previous?.id??'empty-previous',current:pool.current.id,next:pool.next?.id??'empty-next'}}
       animate={settings.pageAnimation} previousReady={Boolean(pool.previous?.location)} nextReady={Boolean(pool.next?.location)}
       enabled={ready&&!keysBlocked&&!bookmarksOpen&&!selectionActive&&!aiSelection&&!showContents&&settings.readingMode==='swipe'}
+      onDiagnostic={(event,detail)=>traceReading(event,{...detail,bookId:book.id,cfi:lastLocation.current??undefined,target:(detail.direction===1?poolRef.current.next:poolRef.current.previous)?.location?.start.cfi})}
       onTurn={commitPage} onInteraction={value=>{
         interaction.current=value;
         controller.current?.injectJavascript(`window.qrInteractionBlocked=${value||keysBlocked};window.qrReader?.cancelPendingSelection();true;`);
@@ -338,6 +377,7 @@ function EpubReaderSession({ preparedSource,onToggleChrome,chapterRequest,onChap
 // Mode/layout changes create a fresh session at the last committed CFI. A
 // promoted preview must never bootstrap again from its original neighbor anchor.
 export default function EpubReader(props:Parameters<typeof EpubReaderSession>[0]){
+  const dimensions=useWindowDimensions();
   const {settings,colors}=useSettings();
   const [resource,setResource]=useState<{bookId:string;uri:string}|null>(null);
   useEffect(()=>{
@@ -352,7 +392,7 @@ export default function EpubReader(props:Parameters<typeof EpubReaderSession>[0]
     return ()=>{cancelled=true;clearTimeout(timer);};
   },[props.book.id,props.book.file_name]);
   const committed=useRef({cfi:props.book.epub_location,progress:props.book.progress});
-  const layout=[props.book.id,settings.readingMode,settings.fontSize,settings.lineHeight,settings.margin,colors.background,colors.text].join(':');
+  const layout=[dimensions.width,dimensions.height,dimensions.fontScale,props.book.id,settings.readingMode,settings.fontSize,settings.lineHeight,settings.margin,colors.background,colors.text].join(':');
   if(!resource||resource.bookId!==props.book.id)return <View style={{flex:1,backgroundColor:colors.background,alignItems:'center',justifyContent:'center'}}><ActivityIndicator color={colors.accent}/><Text style={{color:colors.muted,marginTop:12}}>正在准备阅读…</Text></View>;
   return <EpubReaderSession key={layout} {...props} preparedSource={resource.uri}
     book={{...props.book,epub_location:committed.current.cfi,progress:committed.current.progress}}

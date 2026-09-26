@@ -46,7 +46,7 @@ function load(path){const out={};new Function('exports',ts.transpileModule(fs.re
  await page.waitForFunction(()=>messages.length>0);
  assert.equal(await page.evaluate(()=>messages[0].type),'qr-position-error','silent failure to restore must not confirm or save page one');
  const component=fs.readFileSync('src/features/reader/EpubReader.tsx','utf8');
- assert.ok(component.includes('restoreEpubPosition(lastLocation.current)'));
+ assert.ok(component.includes('restoreEpubPosition(document.anchor,document.visualAnchor)'));
  assert.ok(!component.includes('initialLocation='),'one restoration owner');
  console.log('PASS: real EPUB reproduces old reset; three destroy/reopen cycles restore saved CFI; absent target never resets position; failed restoration reports error');
  }finally{await browser.close();}

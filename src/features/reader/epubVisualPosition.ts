@@ -13,7 +13,8 @@ export const epubVisualPosition = String.raw`
    var container=rendition.manager.container,current=rendition.currentLocation();
    if(!current||current.start.index!==visual.section||container.clientWidth!==visual.width||container.clientHeight!==visual.height)return false;
    rendition.manager.scrollTo(visual.x,visual.y,true);
-   await new Promise(function(resolve){requestAnimationFrame(function(){requestAnimationFrame(resolve);});});
+   // scrollTo is immediate for this hidden, same-layout container. Reading the
+   // offsets verifies the move; qrPaintPage remains the final presentation gate.
    return Math.abs(container.scrollLeft-visual.x)<2&&Math.abs(container.scrollTop-visual.y)<2;
   },
   same:function(a,b){

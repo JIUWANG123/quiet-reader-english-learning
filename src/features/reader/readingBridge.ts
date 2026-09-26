@@ -3,7 +3,7 @@ export function readingBridge() {
   const root = window as any;
   if (root.qrReader) return;
   let marks:any[]=[];let meaningsVisible=true;
-  let sentenceMarks:any[]=[];
+  let sentenceMarks:any[]=[];let marksKey='[]',sentenceMarksKey='[]';
   const documents=new Map<Document, {draw:()=>void;cancelHold:()=>void}>();
   function post(value:unknown) { root.ReactNativeWebView.postMessage(JSON.stringify(value)); }
   function attach(doc:Document, sectionKey?:string) {
@@ -195,6 +195,6 @@ export function readingBridge() {
   }
   const drawAll=()=>documents.forEach((value,doc)=>{if(doc.defaultView)value.draw();else documents.delete(doc);});
   let frame=0;const redraw=()=>{if(!frame)frame=requestAnimationFrame(()=>{frame=0;drawAll();});};
-  root.qrReader={setReadingMode:(value:string)=>{root.qrReadingMode=value;documents.forEach((_,doc)=>{doc.documentElement.style.touchAction=value==='swipe'?'pan-y':'auto';doc.body.style.touchAction=value==='swipe'?'pan-y':'auto';});},setMeaningsVisible:(value:boolean)=>{meaningsVisible=value;documents.forEach((_,doc)=>doc.documentElement.classList.toggle('qr-hide-meanings',!value));},selected:null,attach,cancelPendingSelection:()=>{root.qrSuppressClickUntil=Date.now()+700;documents.forEach(value=>value.cancelHold());},setMarks:(next:any[])=>{marks=next;redraw();},setSentenceMarks:(next:any[])=>{sentenceMarks=next;redraw();},choose:(mode:string)=>{if(root.qrReader.selected)post({...root.qrReader.selected,mode:mode==='mark'?'translate':mode,action:mode==='mark'?'mark':undefined});}};
+  root.qrReader={setReadingMode:(value:string)=>{root.qrReadingMode=value;documents.forEach((_,doc)=>{doc.documentElement.style.touchAction=value==='swipe'?'pan-y':'auto';doc.body.style.touchAction=value==='swipe'?'pan-y':'auto';});},setMeaningsVisible:(value:boolean)=>{meaningsVisible=value;documents.forEach((_,doc)=>doc.documentElement.classList.toggle('qr-hide-meanings',!value));},selected:null,attach,cancelPendingSelection:()=>{root.qrSuppressClickUntil=Date.now()+700;documents.forEach(value=>value.cancelHold());},setMarks:(next:any[])=>{const key=JSON.stringify(next);if(key===marksKey)return;marksKey=key;marks=next;redraw();},setSentenceMarks:(next:any[])=>{const key=JSON.stringify(next);if(key===sentenceMarksKey)return;sentenceMarksKey=key;sentenceMarks=next;redraw();},choose:(mode:string)=>{if(root.qrReader.selected)post({...root.qrReader.selected,mode:mode==='mark'?'translate':mode,action:mode==='mark'?'mark':undefined});}};
   attach(document,root.qrSectionKey);
 }

@@ -1,0 +1,8 @@
+const fs=require('fs'),ts=require('typescript'),assert=require('node:assert/strict');
+const source=ts.transpileModule(fs.readFileSync('src/features/reader/IsolatedEpubPage.tsx','utf8')+'\nexport {Page as TestPage};',{compilerOptions:{module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.ReactJSX,target:ts.ScriptTarget.ES2020}}).outputText;
+const refs=[],scripts=[];let cursor=0,effects=[];
+const controller={injectJavascript:s=>scripts.push(s)};
+const react={useRef:v=>refs[cursor++]??(refs[cursor-1]={current:v}),useMemo:f=>f(),useImperativeHandle:()=>{},useEffect:f=>effects.push(f)};
+const moduleExports={};new Function('exports','require',source)(moduleExports,n=>n==='react'?react:n==='react/jsx-runtime'?{jsx:(type,props)=>({type,props})}:n==='@epubjs-react-native/core'?{Reader:'Reader',ReaderProvider:'Provider',useReader:()=>controller}:n==='./epubLocationCache'?{locationCache:()=>({read:()=>null,write:()=>{}})}:{useEpubFileSystem:()=>{}});
+function render(revision){cursor=0;effects=[];const tree=moduleExports.TestPage({runtimeId:'a',src:'fixture',navigationRevision:revision,navigationJavascript:'navigate '+revision,injectedJavascript:'boot',controllerRef:null});effects.forEach(f=>f());return tree;}
+render(0);const latest=render(2);assert.deepEqual(scripts,[]);latest.props.onReady();assert.deepEqual(scripts,['navigate 2'],'latest navigation received before WebView ready must not be dropped');render(2);assert.equal(scripts.length,1,'same assignment is not injected twice');render(3);assert.equal(scripts.at(-1),'navigate 3');console.log('PASS: cold WebView applies latest pending revision exactly once');

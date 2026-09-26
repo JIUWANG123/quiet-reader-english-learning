@@ -13,3 +13,24 @@ test('cloze preserves surrounding words and hides all exact target tokens',()=>{
  assert.equal(clozeSentence('The cat sat by a cathedral. Cat!',['cat']),'The ______ sat by a cathedral. ______!');
  assert.equal(clozeSentence('Nothing matches.',['cat']),null);
 });
+import {clozeQuestion} from '../src/features/vocabulary/quiz';
+test('cloze answer retains original inflection and only masks selected occurrence',()=>{
+ assert.deepEqual(clozeQuestion('She had taken it, then taken another.',['take','taken'],8),{text:'She had ______ it, then taken another.',answer:'taken',offset:8});
+ assert.deepEqual(clozeQuestion('Cat and cat.',['cat'],8),{text:'Cat and ______.',answer:'cat',offset:8});
+ assert.equal(clozeQuestion('A cathedral.',['cat']),null);
+ assert.equal(clozeQuestion('Cat and cat.',['cat'],2),null);
+ assert.equal(clozeQuestion('Cat and cat.',['cat']),null);
+});
+import {studyQuestionKind} from '../src/features/vocabulary/quiz';
+test('missing learning content never produces an empty objective question',()=>{
+ assert.equal(studyQuestionKind({translation:null,hasSentence:true,options:4}),'missing');
+ assert.equal(studyQuestionKind({translation:'拿',hasSentence:false,options:4}),'recognition');
+ assert.equal(studyQuestionKind({translation:'拿',hasSentence:true,options:1}),'reveal');
+ assert.equal(studyQuestionKind({translation:'拿',hasSentence:true,options:4}),'cloze');
+});
+
+import {meaningChoices} from '../src/features/vocabulary/quiz';
+test('meaning options reject overlapping senses and incompatible part of speech',()=>{
+ const choices=meaningChoices('n.家具；陈设',['n.家具','n.陈设；设备','v.布置','n.牙齿','n.苹果'],()=>0.5);
+ assert.deepEqual(new Set(choices),new Set(['n.家具；陈设','n.牙齿','n.苹果']));
+});

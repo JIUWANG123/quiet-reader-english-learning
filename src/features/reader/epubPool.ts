@@ -1,5 +1,5 @@
 import type {Location} from '@epubjs-react-native/core';
-export type EpubDocument={id:string;anchor:string|null;direction:-1|0|1;revision?:number;visualAnchor?:Location;location?:Location;boundary?:boolean};
+export type EpubDocument={id:string;anchor:string|null;direction:-1|0|1;revision?:number;visualAnchor?:Location;location?:Location;boundary?:boolean;retries?:number};
 export type EpubPool={previous:EpubDocument|null;current:EpubDocument;next:EpubDocument|null;serial:number};
 export function createEpubPool(anchor:string|null,serial=0):EpubPool{return{current:{id:String(serial),anchor,direction:0},previous:null,next:null,serial:serial+1};}
 function neighbors(pool:EpubPool):EpubPool{
@@ -10,8 +10,9 @@ function neighbors(pool:EpubPool):EpubPool{
  if(!next.next)next.next={id:String(next.serial++),anchor:location.start.cfi,visualAnchor:location,direction:1};
  return next;
 }
-export function readyEpubDocument(pool:EpubPool,id:string,location:Location):EpubPool{
+export function readyEpubDocument(pool:EpubPool,id:string,location:Location,revision?:number):EpubPool{
  const slot=(['current','previous','next'] as const).find(key=>pool[key]?.id===id);if(!slot)return pool;
+ if(revision!==undefined&&revision!==(pool[slot]!.revision??0))return pool;
  const next={...pool,[slot]:{...pool[slot]!,location}};
  return slot==='current'?neighbors(next):next;
 }
@@ -36,3 +37,4 @@ export function invalidateEpubNeighbors(pool:EpubPool):EpubPool{
  }:null;
  return {...pool,previous:reset(pool.previous,-1),next:reset(pool.next,1)};
 }
+

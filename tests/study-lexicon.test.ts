@@ -1,0 +1,51 @@
+import {filterWords,defaultFilters} from '../src/services/vocabulary/review';
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {DatabaseSync} from 'node:sqlite';
+import type {SQLiteDatabase} from 'expo-sqlite';
+import {schema} from '../src/db/schema';
+import {migrateStudyLexicon,addStudySource,setStudyExcluded,listStudyWords,setStudyMeaning,setStudyFamiliarity,removeStudyWord} from '../src/services/vocabulary/lexicon';
+test('lemma migration retains old rows, earliest schedule and all sources without duplicates',async()=>{
+ const native=new DatabaseSync(':memory:');native.exec(schema);
+ const db={execAsync:async(sql:string)=>native.exec(sql),runAsync:async(sql:string,...p:any[])=>native.prepare(sql).run(...p),getAllAsync:async(sql:string,...p:any[])=>native.prepare(sql).all(...p),getFirstAsync:async(sql:string,...p:any[])=>native.prepare(sql).get(...p),withExclusiveTransactionAsync:async(fn:any)=>{native.exec('BEGIN');try{await fn(db);native.exec('COMMIT')}catch(e){native.exec('ROLLBACK');throw e}}} as unknown as SQLiteDatabase;
+ try{
+ for(const [word,due,sentence] of [['take',30,'I take it.'],['taken',10,'She had taken it.']] as const)
+ native.prepare('INSERT INTO vocabulary(word,lemma,source_text,created_at,due_at) VALUES(?,?,?,1,?)').run(word,'take',sentence,due);
+ await migrateStudyLexicon(db);await migrateStudyLexicon(db);
+ assert.equal(native.prepare('SELECT count(*) n FROM study_lexemes').get()!.n,1);
+ assert.equal(native.prepare('SELECT due_at FROM study_lexemes').get()!.due_at,10);
+ assert.equal(native.prepare('SELECT count(*) n FROM study_sources').get()!.n,2);
+ assert.equal(native.prepare('SELECT count(*) n FROM vocabulary').get()!.n,2);
+ const words=await listStudyWords(db);
+ assert.equal(words.length,1);assert.equal(words[0].word,'take');assert.equal(words[0].due_at,10);
+ assert.equal((await listStudyWords(db,true,{limit:1,offset:1})).length,0);
+ assert.equal((await listStudyWords(db,true,{search:'missing'})).length,0);
+ assert.equal((await listStudyWords(db,true,{words:['other']})).length,0);
+ assert.equal((await listStudyWords(db,true,{words:['take']})).length,1);
+ await setStudyMeaning(db,'take',null,'I take it.','v.拿','ai');
+ assert.equal((await listStudyWords(db))[0].translation,'v.拿');
+ assert.equal(native.prepare("SELECT translation FROM vocabulary WHERE word='taken'").get()!.translation,null);
+ await setStudyExcluded(db,'take',true);
+ assert.equal((await listStudyWords(db)).length,0);
+ assert.equal((await listStudyWords(db,true)).length,1);
+ await addStudySource(db,{lemma:'take',word:'taking',bookId:'b',text:'Taking time.',translation:'花费',createdAt:4});
+ await migrateStudyLexicon(db);
+ assert.equal(native.prepare('SELECT excluded FROM study_lexemes').get()!.excluded,1);
+ assert.equal(native.prepare('SELECT count(*) n FROM study_sources').get()!.n,3);
+ native.prepare("INSERT INTO books(id,title,format,file_name,created_at) VALUES('b','Book B','txt','b',1)").run();
+ const sourced=await listStudyWords(db,true);
+ assert.equal(filterWords(sourced,{...defaultFilters,book:'b'}).length,1);
+ assert.equal(sourced[0].source_books?.find(b=>b.id==='b')?.title,'Book B');
+ await setStudyFamiliarity(db,'take',2,1000);
+ assert.equal((await listStudyWords(db,true))[0].familiarity,2);
+ assert.equal(native.prepare("SELECT familiarity FROM vocabulary WHERE word='taken'").get()!.familiarity,2);
+ native.prepare('INSERT INTO vocabulary(word,lemma,created_at,due_at) VALUES(?,?,?,0)').run('taking','take',99);
+ await migrateStudyLexicon(db);
+ assert.equal((await listStudyWords(db,true))[0].familiarity,2);
+ assert.equal((await listStudyWords(db,true))[0].due_at,1000+3*86400000);
+ await removeStudyWord(db,'take');
+ assert.equal((await listStudyWords(db,true)).length,0);
+ assert.equal(native.prepare('SELECT count(*) n FROM vocabulary').get()!.n,0);
+ assert.equal(native.prepare('SELECT count(*) n FROM study_sources').get()!.n,0);
+ }finally{native.close();}
+});

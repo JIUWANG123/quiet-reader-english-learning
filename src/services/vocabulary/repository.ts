@@ -1,7 +1,10 @@
 import type { SQLiteDatabase } from 'expo-sqlite';
 import type { DictionaryResult } from '../../features/dictionary/types';
+import {addStudySource} from './lexicon';
 
 export type VocabularyItem = {
+  meaning_origin?:'ai'|'dictionary';
+  source_books?:{id:string|null;title:string|null}[];
   word: string;
   lemma: string;
   phonetic: string | null;
@@ -27,6 +30,7 @@ export async function saveVocabulary(db: SQLiteDatabase, result: DictionaryResul
     entry.word, result.lemma, entry.phonetic, entry.translation, entry.definition,
     sourceBookId, sourceText.trim() || null, Date.now(),
   );
+  await addStudySource(db,{lemma:result.lemma,word:result.query,bookId:sourceBookId,text:sourceText,translation:entry.translation,createdAt:Date.now()});
 }
 
 export async function listVocabulary(db: SQLiteDatabase) {
@@ -50,4 +54,5 @@ export async function ensureVocabulary(db:SQLiteDatabase,result:DictionaryResult
  const e=result.entry;
  await db.runAsync(`INSERT INTO vocabulary(word,lemma,phonetic,translation,definition,source_book_id,source_text,created_at)
  VALUES(?,?,?,?,?,?,?,?) ON CONFLICT(word) DO NOTHING`,e.word,result.lemma,e.phonetic,e.translation,e.definition,bookId,sourceText.trim()||null,Date.now());
+ await addStudySource(db,{lemma:result.lemma,word:result.query,bookId,text:sourceText,translation:e.translation,createdAt:Date.now()});
 }

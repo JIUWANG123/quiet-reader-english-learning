@@ -66,3 +66,5 @@
 - 1.9.7：复用 JSZip（MIT）解包资源与 epub.js（BSD-2-Clause）原生 OPF 加载；保留文件路径和 spine，避免改变 CFI。参考 https://github.com/futurepress/epub.js/blob/master/documentation/md/API.md 。缓存可重建，原文件不删除。
 
 2026-09-14：复制采用 expo-clipboard（Expo SDK 57 / MIT）；正文解析采用 htmlparser2 10（MIT）；全文索引采用独立 SQLite FTS5（Public Domain）。均复用官方实现，不将整本书载入 JS 搜索状态。
+
+2026-09-15 背词调度：核查 npm ts-fsrs 5.4.2 和 open-spaced-repetition/ts-fsrs（MIT，仓库当日仍有维护）。本次保留既有 nextReview，避免以缺失的记忆稳定度/难度重建旧到期日；新增独立纠错会话和事务结算，不声称实现 FSRS。队列与词库采用 SQLite 有界查询，复用现有 Lucide 图标及系统 TTS。

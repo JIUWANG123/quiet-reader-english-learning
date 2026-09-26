@@ -2,8 +2,8 @@ import type {SQLiteDatabase} from 'expo-sqlite';
 import type {VocabularyItem} from './repository';
 export type Filters={book:string; familiarity:number; due:'all'|'due'|'new'};
 export const defaultFilters:Filters={book:'all',familiarity:-1,due:'all'};
-export function filterWords(words:VocabularyItem[],f:Filters,now=Date.now()){
- return words.filter(w=>(f.book==='all'||(f.book==='deleted'?w.source_book_id===null:w.source_book_id===f.book))&&(f.familiarity<0||w.familiarity===f.familiarity)&&(f.due==='all'||(f.due==='new'?w.due_at===0:w.due_at<=now)));
+export function filterWords<T extends VocabularyItem>(words:T[],f:Filters,now=Date.now()){
+ return words.filter(w=>(f.book==='all'||(f.book==='deleted'?(w.source_books?.some(b=>b.id===null)??w.source_book_id===null):(w.source_books?.some(b=>b.id===f.book)??w.source_book_id===f.book)))&&(f.familiarity<0||w.familiarity===f.familiarity)&&(f.due==='all'||(f.due==='new'?w.due_at===0:w.due_at<=now)));
 }
 export function localDay(now=Date.now()){const d=new Date(now);return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;}
 export type Plan={newLimit:number;reviewLimit:number};

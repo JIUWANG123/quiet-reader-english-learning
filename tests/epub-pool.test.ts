@@ -40,3 +40,10 @@ test('layout invalidation preserves current page and rejects old neighbor readin
  assert.equal(next.next?.anchor,'current');
  assert.equal(turnEpubPool(next,1),next);
 });
+
+test('stale generation is rejected inside the state update, including reversal',()=>{
+ let pool=readyEpubDocument(createEpubPool('a'),'0',loc('a'));pool=readyEpubDocument(pool,pool.next!.id,loc('b'));pool=turnEpubPool(pool,1);const id=pool.next!.id,revision=pool.next!.revision!;
+ const stale=(readyEpubDocument as any)(pool,id,loc('stale'),revision-1);assert.equal(stale,pool);
+ pool=(readyEpubDocument as any)(pool,id,loc('c'),revision);pool=turnEpubPool(pool,-1);assert.equal(pool.current.location?.start.cfi,'a');
+});
+
