@@ -6,6 +6,7 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -19,7 +20,7 @@ jobs:
       - run: npm ci
       - run: npx expo prebuild --platform android --no-install
       - run: chmod +x android/gradlew
-      - run: cd android && ./gradlew assembleRelease
+      - run: cd android && ./gradlew assembleRelease --no-daemon --console=plain --stacktrace
       - uses: actions/upload-artifact@v4
         with:
           name: quiet-reader-1.11.2-apk
