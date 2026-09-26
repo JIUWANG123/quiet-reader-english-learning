@@ -4,6 +4,7 @@ import { randomUUID } from 'expo-crypto';
 import type { SQLiteDatabase } from 'expo-sqlite';
 import { fileFormat, MAX_IMPORT_BYTES, normalizeText, paginateText } from './text';
 import { buildEpubIndex, type EpubIndex } from './epubIndex';
+import { warmupEpubAfterImport } from './warmup';
 
 export async function importBook(db: SQLiteDatabase) {
   const result = await DocumentPicker.getDocumentAsync({ type: '*/*', copyToCacheDirectory: true, multiple: false });
@@ -42,6 +43,7 @@ export async function importBook(db: SQLiteDatabase) {
         for (let i = 0; i < pages.length; i++) await statement.executeAsync([id, i, pages[i].text, pages[i].heading]);
       } finally { await statement.finalizeAsync(); }
     });
+    if(format==='epub') void warmupEpubAfterImport(id,destination.uri);
     return { id, format };
   } catch (error) {
     if (destination?.exists) destination.delete();
