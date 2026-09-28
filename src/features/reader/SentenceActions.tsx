@@ -34,7 +34,7 @@ export function SentenceActions({bookId,selection,onTranslate,onMore,onClose,tra
   setMarked(!marked);marksChanged();
  }
  async function collect(){if(saved)await db.runAsync('DELETE FROM saved_sentences WHERE book_id=? AND text=?',bookId,selection.targetText.trim());else await saveSentence(db,bookId,selection.targetText,selection.paragraphText??selection.targetText);setSaved(!saved);}
- return <View><View style={{flexDirection:'row',alignItems:'center',justifyContent:'space-between'}}>
+ return <View>{translation?.trim()?<View style={{padding:10,marginBottom:8,borderLeftWidth:2,borderLeftColor:colors.accent,backgroundColor:colors.surface,borderRadius:8}}><Text selectable style={{color:colors.text,lineHeight:23}}>{translation.trim()}</Text></View>:null}<View style={{flexDirection:'row',alignItems:'center',justifyContent:'space-between'}}>
   <IconButton icon={Underline} label={marked?'取消划线':'划线'} selected={marked} disabled={busy} onPress={()=>void act(mark)} onLongPress={onMore}/>
   <IconButton icon={Bookmark} label={saved?'取消收藏':'收藏句子'} selected={saved} disabled={busy} onPress={()=>void act(collect)}/>
   {onTranslate?<IconButton icon={Languages} label="翻译句子" onPress={onTranslate}/>:null}
