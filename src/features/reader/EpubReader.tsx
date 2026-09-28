@@ -218,7 +218,7 @@ function EpubReaderSession({ preparedSource,onToggleChrome,chapterRequest,onChap
     const active=slot==='current';
     return <IsolatedEpubPage controllerRef={value=>{if(value)controllers.current.set(document.id,value);else controllers.current.delete(document.id);if(active)controller.current=value;}} runtimeId={runtimeId+'-'+document.id}
         key={document.id+flow} navigationRevision={document.revision??0}
-        navigationJavascript={epubPreviewBoot(document.direction,document.revision??0,document.visualAnchor)+restoreEpubPosition(document.anchor,document.visualAnchor)}
+        navigationJavascript={epubPreviewBoot(document.direction,document.revision??0,document.visualAnchor)+restoreEpubPosition(document.anchor,document.visualAnchor,settings.readingMode==='scroll'?'scroll':'paginated')}
         src={uri} startupAnchor={document.anchor} generateLocations={active}
         keepScrollOffsetOnLocationChange
         defaultTheme={initialTheme.current}
@@ -227,7 +227,7 @@ function EpubReaderSession({ preparedSource,onToggleChrome,chapterRequest,onChap
         enableSwipe={false}
         enableSelection
         menuItems={selectionMenu}
-        injectedJavascript={paintScript+epubVisualPosition+epubPreviewBoot(document.direction,document.revision??0,document.visualAnchor)+`window.qrInteractionBlocked=false;window.qrSelectionGuard&&(window.qrSelectionGuard.locked=false);window.qrReadingMode=${JSON.stringify(settings.readingMode==='scroll'?'scroll':'native')};`+epubProgressBridge+readingBridgeScript+`if(!window.qrContentHook){window.qrContentHook=true;rendition.hooks.content.register(function(content){window.qrReader.attach(content.document,'epub:'+content.sectionIndex);});}rendition.getContents().forEach(function(content){window.qrReader.attach(content.document,'epub:'+content.sectionIndex);});true;`+epubParagraphBridge+`window.qrEpubParagraphs?.sync(${JSON.stringify(paragraphStates.current)});window.qrEpubParagraphs?.setVisible(${settings.paragraphTranslation});true;`+restoreEpubPosition(document.anchor,document.visualAnchor)}
+        injectedJavascript={paintScript+epubVisualPosition+epubPreviewBoot(document.direction,document.revision??0,document.visualAnchor)+`window.qrInteractionBlocked=false;window.qrSelectionGuard&&(window.qrSelectionGuard.locked=false);window.qrReadingMode=${JSON.stringify(settings.readingMode==='scroll'?'scroll':'native')};`+epubProgressBridge+readingBridgeScript+`if(!window.qrContentHook){window.qrContentHook=true;rendition.hooks.content.register(function(content){window.qrReader.attach(content.document,'epub:'+content.sectionIndex);});}rendition.getContents().forEach(function(content){window.qrReader.attach(content.document,'epub:'+content.sectionIndex);});true;`+epubParagraphBridge+`window.qrEpubParagraphs?.sync(${JSON.stringify(paragraphStates.current)});window.qrEpubParagraphs?.setVisible(${settings.paragraphTranslation});true;`+restoreEpubPosition(document.anchor,document.visualAnchor,settings.readingMode==='scroll'?'scroll':'paginated')}
         onStarted={()=>{if(!active)return;traceReading('started',{bookId:book.id,cfi:lastLocation.current??undefined,mode:settings.readingMode});restored.current=false;setReady(false);setSelectionActive(false);setSelectedSentence(null);appliedTheme.current=initialTheme.current;}}
         onRendered={()=>{controllers.current.get(document.id)?.injectJavascript('window.qrDecoratePage?.();true;');}}
         onWebViewMessage={(event: unknown) => {

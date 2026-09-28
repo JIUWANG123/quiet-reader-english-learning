@@ -15,3 +15,10 @@ test('cancelled restore cannot move a recycled visual anchor',async()=>{
  let moves=0;const context:any={setTimeout,clearTimeout,qrVisualPosition:{restore:async()=>{moves++;return true;}},ReactNativeWebView:{postMessage:()=>{}},rendition:{display:async()=>{moves++;}}};context.window=context;
  vm.runInNewContext(restoreEpubPosition('b',{qrVisual:{}}),context);context.qrCancelRestore();await new Promise<void>(resolve=>setImmediate(resolve));assert.equal(moves,0);
 });
+
+test('scroll restore accepts epub.js visible location after display settles',async()=>{
+ const sent:any[]=[],location={start:{cfi:'other'},end:{cfi:'other-end'}};
+ const context:any={setTimeout,clearTimeout,ReactNativeWebView:{postMessage:(s:string)=>sent.push(JSON.parse(s))},rendition:{display:async()=>{},manager:{currentLocation:async()=>[1]},located:()=>location},ePub:{CFI:{prototype:{compare:()=>1}}}};context.window=context;
+ vm.runInNewContext((restoreEpubPosition as any)('saved-cfi',undefined,'scroll'),context);await new Promise<void>(resolve=>setImmediate(resolve));
+ assert.equal(sent[0]?.type,'qr-position-ready');
+});
