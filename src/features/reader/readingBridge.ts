@@ -63,7 +63,12 @@ export function readingBridge() {
       positionHandles(selected.getRangeAt(0));
       root.qrReader.selected=payload(selected.getRangeAt(0),'translate');
       const rect=selected.getRangeAt(0).getBoundingClientRect();
-      const toolbarTop=rect.bottom+76<win.innerHeight?rect.bottom+8:Math.max(8,rect.top-76);
+      // EPUB selection lives in a chapter iframe. In scrolled-doc flow that
+      // iframe can be taller than the WebView and move with the outer scroll;
+      // native overlays need coordinates relative to the top-level WebView.
+      const frameTop=win.frameElement?.getBoundingClientRect().top??0;
+      const selectionTop=frameTop+rect.top,selectionBottom=frameTop+rect.bottom;
+      const toolbarTop=selectionBottom+76<root.innerHeight?selectionBottom+8:Math.max(8,selectionTop-76);
       post({...root.qrReader.selected,type:'qr-selection-ready',toolbarTop});
     }
     let selectionTimer:ReturnType<typeof setTimeout>;
