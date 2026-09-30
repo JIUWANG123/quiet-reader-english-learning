@@ -5,6 +5,7 @@ import type {SQLiteDatabase} from 'expo-sqlite';
 import {schema} from '../src/db/schema';
 import {filterWords,defaultFilters,normalizePlan,nextReview,recordReview,todayStats,studyQueue,savePlan,readPlan} from '../src/services/vocabulary/review';
 import {listVocabulary,ensureVocabulary,type VocabularyItem} from '../src/services/vocabulary/repository';
+import {listStudyWords} from '../src/services/vocabulary/lexicon';
 import {ankiTSV} from '../src/services/vocabulary/anki';
 import type {DictionaryResult} from '../src/features/dictionary/types';
 function fixture(){
@@ -25,8 +26,8 @@ test('review commits once, keeps daily results across reads, retries wrong words
   await recordReview(db,'one','take','spelling',0,now);await recordReview(db,'one','take','spelling',0,now);
   assert.equal((await todayStats(db,now)).attempts,1);
   assert.equal((await listVocabulary(db))[0].due_at,now+600000);
-  assert.equal((await studyQueue(db,await listVocabulary(db),{newLimit:10,reviewLimit:30},now)).length,0);
-  assert.equal((await studyQueue(db,await listVocabulary(db),{newLimit:10,reviewLimit:30},now+600000)).length,1);
+  assert.equal((await studyQueue(db,await listVocabulary(db),{newLimit:10,reviewLimit:30,order:'default'},now)).length,0);
+  assert.equal((await studyQueue(db,await listVocabulary(db),{newLimit:10,reviewLimit:30,order:'default'},now+600000)).length,1);
   await recordReview(db,'two','take','spelling',2,now+600000);
   const s=await todayStats(db,now);assert.equal(s.attempts,2);assert.equal(s.correct,1);assert.equal(s.newWords,1);assert.equal(s.reviewWords,0);
   assert.equal((await todayStats(db,now+86400000)).attempts,0);
@@ -41,20 +42,38 @@ test('failed log insert rolls back due date and familiarity',async()=>{
 });
 test('daily plan limits fresh and due cards independently and settings survive reload',async()=>{
  const {native,db,word}=fixture();try{word('one');word('two');word('old',1);word('future',Date.now()+86400000);
- await savePlan(db,{newLimit:1,reviewLimit:1});assert.deepEqual(await readPlan(db),{newLimit:1,reviewLimit:1});
+ await savePlan(db,{newLimit:1,reviewLimit:1,order:'default'});assert.deepEqual(await readPlan(db),{newLimit:1,reviewLimit:1,order:'default'});
  const queue=await studyQueue(db,await listVocabulary(db),await readPlan(db));assert.equal(queue.length,2);assert.equal(queue[0].word,'old');
  await recordReview(db,'id',queue[1].word,'cloze',2);
  assert.deepEqual((await studyQueue(db,await listVocabulary(db),await readPlan(db))).map(w=>w.word),['old']);
- assert.deepEqual(normalizePlan({newLimit:-1,reviewLimit:Infinity}),{newLimit:0,reviewLimit:30});
+ assert.deepEqual(normalizePlan({newLimit:-1,reviewLimit:Infinity}),{newLimit:0,reviewLimit:30,order:'default'});
  }finally{native.close()}
 });
 test('book, familiarity and due filters combine',()=>{
  const row={word:'one',source_book_id:'book',familiarity:2,due_at:100} as VocabularyItem;
- assert.equal(filterWords([row],{book:'book',familiarity:2,due:'due'},101).length,1);
+ assert.equal(filterWords([row],{book:'book',familiarity:2,due:'due',frequency:'all'},101).length,1);
  assert.equal(filterWords([row],{...defaultFilters,book:'other'}).length,0);
  assert.equal(filterWords([row],{...defaultFilters,due:'new'}).length,0);
  assert.equal(filterWords([{...row,source_book_id:null}],{...defaultFilters,book:'deleted'}).length,1);
  assert.equal(nextReview(7,3,0).days,18);assert.throws(()=>nextReview(0,4,0));
+});
+test('frequency filters use lookup_count bands',()=>{
+ const rows=[1,2,4,5,9].map((lookup_count,i)=>({word:String(i),source_book_id:null,familiarity:0,due_at:0,lookup_count} as VocabularyItem));
+ assert.deepEqual(filterWords(rows,{...defaultFilters,frequency:'low'}).map(w=>w.lookup_count),[1]);
+ assert.deepEqual(filterWords(rows,{...defaultFilters,frequency:'medium'}).map(w=>w.lookup_count),[2,4]);
+ assert.deepEqual(filterWords(rows,{...defaultFilters,frequency:'high'}).map(w=>w.lookup_count),[5,9]);
+});
+test('legacy study plans default to chronological order and persist frequency order',async()=>{
+ assert.deepEqual(normalizePlan({newLimit:3,reviewLimit:4}),{newLimit:3,reviewLimit:4,order:'default'});
+ const {native,db}=fixture();try{await savePlan(db,{newLimit:2,reviewLimit:3,order:'frequency'});assert.equal((await readPlan(db)).order,'frequency');}finally{native.close()}
+});
+test('frequency priority sorts within due and fresh groups without changing group precedence',async()=>{
+ const {native,db,word}=fixture();try{word('new-low');word('new-high');word('due-low',1);word('due-high',1);native.prepare('UPDATE vocabulary SET lookup_count=? WHERE word=?').run(1,'new-low');native.prepare('UPDATE vocabulary SET lookup_count=? WHERE word=?').run(8,'new-high');native.prepare('UPDATE vocabulary SET lookup_count=? WHERE word=?').run(2,'due-low');native.prepare('UPDATE vocabulary SET lookup_count=? WHERE word=?').run(9,'due-high');
+ const words=await listVocabulary(db);const queue=await studyQueue(db,words,{newLimit:2,reviewLimit:2,order:'frequency'},Date.now());assert.deepEqual(queue.map(w=>w.word),['due-high','due-low','new-high','new-low']);
+}finally{native.close()}
+});
+test('frequency bands are applied in SQL before pagination',async()=>{
+ const {native,db}=fixture();try{for(const [word,count] of [['one',1],['two',2],['four',4],['five',5]] as const)native.prepare('INSERT INTO vocabulary(word,lemma,created_at,lookup_count) VALUES(?,?,1,?)').run(word,word,count);const low=await listStudyWords(db,true,{frequency:'low',limit:10});const medium=await listStudyWords(db,true,{frequency:'medium',limit:1});const high=await listStudyWords(db,true,{frequency:'high',limit:10});assert.deepEqual(low.map(w=>w.lookup_count),[1]);assert.deepEqual(medium.map(w=>w.lookup_count),[4]);assert.deepEqual(high.map(w=>w.lookup_count),[5]);}finally{native.close()}
 });
 test('repeated marking preserves first sentence and review state',async()=>{
  const {native,db}=fixture();try{

@@ -1,16 +1,19 @@
 import type {SQLiteDatabase} from 'expo-sqlite';
 import type {VocabularyItem} from './repository';
-export type Filters={book:string; familiarity:number; due:'all'|'due'|'new'};
-export const defaultFilters:Filters={book:'all',familiarity:-1,due:'all'};
+export type FrequencyFilter='all'|'high'|'medium'|'low';
+export type Filters={book:string; familiarity:number; due:'all'|'due'|'new'; frequency?:FrequencyFilter};
+export const defaultFilters:Filters={book:'all',familiarity:-1,due:'all',frequency:'all'};
+export type StudyOrder='default'|'frequency';
 export function filterWords<T extends VocabularyItem>(words:T[],f:Filters,now=Date.now()){
- return words.filter(w=>(f.book==='all'||(f.book==='deleted'?(w.source_books?.some(b=>b.id===null)??w.source_book_id===null):(w.source_books?.some(b=>b.id===f.book)??w.source_book_id===f.book)))&&(f.familiarity<0||w.familiarity===f.familiarity)&&(f.due==='all'||(f.due==='new'?w.due_at===0:w.due_at<=now)));
+ const frequency=f.frequency??'all';
+ return words.filter(w=>(f.book==='all'||(f.book==='deleted'?(w.source_books?.some(b=>b.id===null)??w.source_book_id===null):(w.source_books?.some(b=>b.id===f.book)??w.source_book_id===f.book)))&&(f.familiarity<0||w.familiarity===f.familiarity)&&(f.due==='all'||(f.due==='new'?w.due_at===0:w.due_at<=now))&&(frequency==='all'||(frequency==='high'?w.lookup_count>=5:frequency==='medium'?w.lookup_count>=2&&w.lookup_count<=4:w.lookup_count===1)));
 }
 export function localDay(now=Date.now()){const d=new Date(now);return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;}
-export type Plan={newLimit:number;reviewLimit:number};
-export const defaultPlan:Plan={newLimit:10,reviewLimit:30};
+export type Plan={newLimit:number;reviewLimit:number;order?:StudyOrder};
+export const defaultPlan:Plan={newLimit:10,reviewLimit:30,order:'default'};
 export function normalizePlan(value:Partial<Plan>):Plan{
  const safe=(n:unknown,fallback:number)=>typeof n==='number'&&Number.isFinite(n)?Math.max(0,Math.min(200,Math.floor(n))):fallback;
- return {newLimit:safe(value.newLimit,10),reviewLimit:safe(value.reviewLimit,30)};
+ return {newLimit:safe(value.newLimit,10),reviewLimit:safe(value.reviewLimit,30),order:value.order==='frequency'?'frequency':'default'};
 }
 export async function readPlan(db:SQLiteDatabase){const row=await db.getFirstAsync<{value:string}>("SELECT value FROM settings WHERE key='study_plan'");try{return normalizePlan(JSON.parse(row?.value??'{}'));}catch{return defaultPlan;}}
 export async function savePlan(db:SQLiteDatabase,plan:Plan){await db.runAsync("INSERT INTO settings(key,value) VALUES('study_plan',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",JSON.stringify(normalizePlan(plan)));}
@@ -21,8 +24,9 @@ export async function todayStats(db:SQLiteDatabase,now=Date.now()){
 }
 export async function studyQueue(db:SQLiteDatabase,words:VocabularyItem[],plan:Plan,now=Date.now()){
  const stats=await todayStats(db,now);
- const fresh=words.filter(w=>w.due_at===0).sort((a,b)=>a.created_at-b.created_at).slice(0,Math.max(0,plan.newLimit-stats.newWords));
- const reviews=words.filter(w=>w.due_at>0&&w.due_at<=now).sort((a,b)=>a.due_at-b.due_at).slice(0,Math.max(0,plan.reviewLimit-stats.reviewWords));
+ const frequency=(a:VocabularyItem,b:VocabularyItem)=>plan.order==='frequency'?(b.lookup_count-a.lookup_count||a.created_at-b.created_at||a.word.localeCompare(b.word)):a.created_at-b.created_at||a.word.localeCompare(b.word);
+ const fresh=words.filter(w=>w.due_at===0).sort(frequency).slice(0,Math.max(0,plan.newLimit-stats.newWords));
+ const reviews=words.filter(w=>w.due_at>0&&w.due_at<=now).sort((a,b)=>a.due_at-b.due_at||(plan.order==='frequency'?b.lookup_count-a.lookup_count:0)||a.created_at-b.created_at||a.word.localeCompare(b.word)).slice(0,Math.max(0,plan.reviewLimit-stats.reviewWords));
  return [...reviews,...fresh];
 }
 // Conservative interval progression, not a claim of implementing FSRS.

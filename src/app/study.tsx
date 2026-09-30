@@ -43,7 +43,7 @@ export default function StudyScreen() {
   const [pool,setPool] = useState<VocabularyItem[]>([]);
   const [cards,setCards] = useState<VocabularyItem[]>([]);
   const [index,setIndex] = useState(0);
-  const [mode,setMode] = useState<Mode>('cloze');
+  const [mode,setMode] = useState<Mode>('choice');
   const [input,setInput] = useState('');
   const [revealed,setRevealed] = useState(false);
   const [correct,setCorrect] = useState<boolean|null>(null);

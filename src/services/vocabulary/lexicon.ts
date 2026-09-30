@@ -29,7 +29,7 @@ export async function setStudyExcluded(db:SQLiteDatabase,lemma:string,excluded:b
  await ensureStudyLexicon(db);
  await db.runAsync('UPDATE study_lexemes SET excluded=? WHERE lemma=?',excluded?1:0,canonical(lemma));
 }
-export type StudyWordQuery={limit?:number;offset?:number;search?:string;words?:string[];book?:string;familiarity?:number;tab?:'all'|'new'|'review'|'excluded';due?:'all'|'due'|'new';unadmittedDay?:string};
+export type StudyWordQuery={limit?:number;offset?:number;search?:string;words?:string[];book?:string;familiarity?:number;tab?:'all'|'new'|'review'|'excluded';due?:'all'|'due'|'new';frequency?:'all'|'high'|'medium'|'low';unadmittedDay?:string};
 export async function listStudyWords(db:SQLiteDatabase,includeExcluded=false,query:StudyWordQuery={}){
  await migrateStudyLexicon(db);
  const where=['(?=1 OR l.excluded=0)'];const params:(string|number)[]=[includeExcluded?1:0];
@@ -45,6 +45,9 @@ export async function listStudyWords(db:SQLiteDatabase,includeExcluded=false,que
  if(query.tab==='review')where.push('l.excluded=0 AND l.due_at>0');
  if(query.due==='new')where.push('l.due_at=0');
  if(query.due==='due'){where.push('l.due_at<=?');params.push(Date.now());}
+ if(query.frequency==='high')where.push('v.lookup_count>=5');
+ if(query.frequency==='medium')where.push('v.lookup_count BETWEEN 2 AND 4');
+ if(query.frequency==='low')where.push('v.lookup_count=1');
  if(query.unadmittedDay){where.push('NOT EXISTS (SELECT 1 FROM study_admissions a WHERE a.word=l.lemma AND a.day=?)');params.push(query.unadmittedDay);}
  const order=query.unadmittedDay?'CASE WHEN l.due_at>0 THEN 0 ELSE 1 END,l.due_at,v.created_at,l.lemma':'v.created_at,l.lemma';
  // One representative preserves first-source metadata; scheduling comes from

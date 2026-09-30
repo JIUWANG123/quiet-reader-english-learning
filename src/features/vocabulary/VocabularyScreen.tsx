@@ -1,7 +1,7 @@
 import {listStudyWords,studyBookChoices,studySources,setStudyExcluded,setStudyFamiliarity,removeStudyWord} from '../../services/vocabulary/lexicon';
 import {Trash2,Share,ChevronDown} from 'lucide-react-native';
 import {IconButton} from '../../components/IconButton';
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, Alert, FlatList, Text, View, TextInput } from 'react-native';
 import {router} from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -32,12 +32,16 @@ export default function VocabularyScreen() {
   const [bookChoices,setBookChoices]=useState<{id:string;title:string}[]>([]);
   const [sources,setSources]=useState<Awaited<ReturnType<typeof studySources>>>([]);
   const [exporting,setExporting]=useState(false);
+  const [filtersReady,setFiltersReady]=useState(false);
+  useEffect(()=>{let active=true;void db.getFirstAsync<{value:string}>("SELECT value FROM settings WHERE key='vocabulary_filters'").then(row=>{if(!active)return;try{const saved=JSON.parse(row?.value??'{}');setFilters({...defaultFilters,...(saved.filters??{}),frequency:['all','high','medium','low'].includes(saved.filters?.frequency)?saved.filters.frequency:'all'});setSearch(typeof saved.search==='string'?saved.search:'');setTab(['all','new','review','excluded'].includes(saved.tab)?saved.tab:'all');}catch{setFilters(defaultFilters);}}).catch(()=>{if(active)setError('筛选设置读取失败，已使用默认筛选。');}).finally(()=>{if(active)setFiltersReady(true);});return()=>{active=false;};},[db]);
+  useEffect(()=>{if(!filtersReady)return;const value=JSON.stringify({filters:{...defaultFilters,...filters},search,tab});void db.runAsync("INSERT INTO settings(key,value) VALUES('vocabulary_filters',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",value).catch(()=>setError('筛选设置保存失败。'));},[db,filters,filtersReady,search,tab]);
   const refresh = useCallback(async () => {
+    if(!filtersReady)return;
     try { const rows=await listStudyWords(db,true,{...filters,search,tab,limit:50});setItems(rows);setHasMore(rows.length===50);setBookChoices(await studyBookChoices(db));setError(''); }
     catch { setError('生词本读取失败，请重试。'); }
     finally { setLoading(false); }
-  }, [db,filters,search,tab]);
-  useFocusEffect(useCallback(() => { void refresh(); }, [refresh]));
+  }, [db,filters,search,tab,filtersReady]);
+  useFocusEffect(useCallback(() => { if(filtersReady)void refresh(); }, [refresh,filtersReady]));
   async function exportCards(){if(exporting)return;setExporting(true);try{const rows=await listStudyWords(db,true,{...filters,search,tab});await exportAnki(db,rows);}catch(e){Alert.alert('导出失败',e instanceof Error?e.message:'请重试');}finally{setExporting(false);}}
 
   async function changeFamiliarity(item: VocabularyItem, next: number) {

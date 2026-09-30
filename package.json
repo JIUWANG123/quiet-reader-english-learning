@@ -1,6 +1,6 @@
 {
   "name": "quiet-reader",
-  "version": "1.11.4",
+  "version": "1.11.5",
   "main": "expo-router/entry",
   "dependencies": {
     "@epubjs-react-native/core": "^1.4.7",

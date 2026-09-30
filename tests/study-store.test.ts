@@ -21,6 +21,8 @@ test('file database reopens with correction state; duplicate submit and undo are
  await createStudySession(db,'s',['a','b','c','d','e']);
  assert.equal((await studyAdmissions(db)).newWords,5);
  assert.equal((await studyCandidates(db,[{word:'fresh',due_at:0,created_at:1}],{newLimit:5,reviewLimit:30})).length,0);
+ const ranked=await studyCandidates(db,[{word:'low',due_at:0,created_at:1,lookup_count:1},{word:'high',due_at:0,created_at:2,lookup_count:8},{word:'review-low',due_at:1,created_at:1,lookup_count:2},{word:'review-high',due_at:1,created_at:2,lookup_count:9}],{newLimit:2,reviewLimit:2,order:'frequency'});
+ assert.deepEqual(ranked.map(word=>word.word),['review-high','review-low']);
  await markStudyIntroduced(db,'s','a');
  native.close();native=new DatabaseSync(join(dir,'app.db'));
  assert.equal((await loadStudySession(db,'s'))?.state.words.a.introduced,true);

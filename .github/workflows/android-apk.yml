@@ -35,5 +35,5 @@ jobs:
           unzip -l "$apk" | grep -E 'assets/index.android.bundle|lib/arm64-v8a'
       - uses: actions/upload-artifact@v4
         with:
-          name: quiet-reader-1.11.4-release-apk
+          name: quiet-reader-1.11.5-release-apk
           path: android/app/build/outputs/apk/release/*.apk
