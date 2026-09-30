@@ -753,7 +753,7 @@
 - Android API 36 GPU 压力：99 次手势、97 次预览，p50 120ms、p95 162ms、最大 188ms，无 preview-error；3 次 PREVIEW_PENDING 属于预热未完成时的合理回弹。强停重开恢复同一锚点。
 - 目标完成。
 
-## 2026-10-01 生词频率筛选与高频优先学习
+## 2026-09-30 生词频率筛选与高频优先学习
 - 已确认频率定义：使用生词本现有 lookup_count，分为全部、高频（>=5）、中频（2-4）、低频（1）。
 - 已实现模型层：Filters 支持 frequency；Plan 支持 order=default/frequency；高频优先只改变 due/new 各自内部顺序，不改变每日额度和到期规则。
 - 已实现界面层：收藏页频率筛选、筛选状态保存到 vocabulary_filters；背词设置增加高频优先；没有 study_mode 时默认英选中，已有题型保持不变。
