@@ -759,3 +759,7 @@
 - 已实现界面层：收藏页频率筛选、筛选状态保存到 vocabulary_filters；背词设置增加高频优先；没有 study_mode 时默认英选中，已有题型保持不变。
 - 兼容性：旧版 study_plan 和收藏筛选缺少新字段时回退默认；非法设置不清除学习数据。
 - 待完成：全量验收、Android Release APK、签名核验、GitHub Release。
+- 全量验证：TypeScript 类型检查通过，101 项自动测试通过，Android Release 构建成功。
+- APK：QuietReader-1.11.5-frequency-study-arm64-20260930.apk，versionName 1.11.5，versionCode 48，SHA-256 5E3C8139B9006A0ACBEAE7595B7056F070F5E9DF743E2F46F03937A71C401BB2。
+- 签名：APK v2 验证通过，证书 SHA-256 fac61745dc0903786fb9ede62a962b399f7348f0bb6f899b8332667591033b9c，与 1.11.4 一致。
+- GitHub Release：https://github.com/JIUWANG123/quiet-reader-english-learning/releases/tag/v1.11.5
