@@ -773,3 +773,5 @@
 - APK v2 签名验证通过，证书 SHA-256 fac61745dc0903786fb9ede62a962b399f7348f0bb6f899b8332667591033b9c，与 1.11.5 一致。
 - APK SHA-256：4A82A992425F85DBAE5940EB7AAC58FFC2738ECD27A9A0C1B6BBFC89FD69B005。
 - GitHub Release：https://github.com/JIUWANG123/quiet-reader-english-learning/releases/tag/v1.11.6
+- 修正旧 TXT 词频补建实现，避免引入原生文件系统依赖；103 项测试和类型检查重新通过。
+- 版本提升至 1.11.7 / Android versionCode 50，重新构建最终 APK。
