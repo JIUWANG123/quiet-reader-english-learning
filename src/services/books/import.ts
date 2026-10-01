@@ -4,6 +4,7 @@ import { randomUUID } from 'expo-crypto';
 import type { SQLiteDatabase } from 'expo-sqlite';
 import { fileFormat, MAX_IMPORT_BYTES, normalizeText, paginateText } from './text';
 import { buildEpubIndex, type EpubIndex } from './epubIndex';
+import {countWordOccurrences} from './wordFrequency';
 
 export async function importBook(db: SQLiteDatabase) {
   const result = await DocumentPicker.getDocumentAsync({ type: '*/*', copyToCacheDirectory: true, multiple: false });
@@ -15,6 +16,7 @@ export async function importBook(db: SQLiteDatabase) {
     const format = fileFormat(asset.name);
     if ((asset.size ?? source.size) > MAX_IMPORT_BYTES) throw new Error('当前支持 128 MB 以内的书籍。');
     const pages = format === 'txt' ? paginateText(normalizeText(await source.text())) : [];
+    const txtFrequency = format === 'txt' ? countWordOccurrences(pages.map(page=>page.text).join('\n')) : undefined;
     const title = asset.name.replace(/\.(txt|epub)$/i, '');
     // Re-importing the same filename reuses the existing book identity so learning data survives.
     const existing = await db.getFirstAsync<{id:string;file_name:string;created_at:number}>(
@@ -37,10 +39,12 @@ export async function importBook(db: SQLiteDatabase) {
         id, title, format, destination!.name, existing?.created_at ?? Date.now(), pages.length);
       // Replace only the imported page rows; learning tables keep the stable book id.
       if (existing && format === 'txt') await tx.runAsync('DELETE FROM book_pages WHERE book_id=?', id);
+      await tx.runAsync('DELETE FROM book_word_frequency WHERE book_id=?',id);
       const statement = await tx.prepareAsync('INSERT INTO book_pages(book_id,page_index,text,heading) VALUES(?,?,?,?)');
       try {
         for (let i = 0; i < pages.length; i++) await statement.executeAsync([id, i, pages[i].text, pages[i].heading]);
       } finally { await statement.finalizeAsync(); }
+      const frequencies=txtFrequency??epubIndex?.wordFrequency??{};for(const [lemma,count] of Object.entries(frequencies))await tx.runAsync('INSERT INTO book_word_frequency(book_id,lemma,occurrence_count) VALUES(?,?,?)',id,lemma,count);
     });
     if (format === 'epub') {
       const { startEpubWarmup } = await import('./warmup');

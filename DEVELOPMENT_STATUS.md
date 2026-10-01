@@ -763,3 +763,9 @@
 - APK：QuietReader-1.11.5-frequency-study-arm64-20260930.apk，versionName 1.11.5，versionCode 48，SHA-256 5E3C8139B9006A0ACBEAE7595B7056F070F5E9DF743E2F46F03937A71C401BB2。
 - 签名：APK v2 验证通过，证书 SHA-256 fac61745dc0903786fb9ede62a962b399f7348f0bb6f899b8332667591033b9c，与 1.11.4 一致。
 - GitHub Release：https://github.com/JIUWANG123/quiet-reader-english-learning/releases/tag/v1.11.5
+
+## 2026-10-01 书籍正文真实词频
+- 新增 book_word_frequency 书籍级词频索引；TXT 导入和 EPUB 章节导入统计正文英文词形。
+- 收藏查询和默认排序改用来源书籍 occurrence_count；背词高频优先改用正文出现次数，lookup_count 继续表示查词次数。
+- 旧 TXT 书籍在词典迁移时自动补建索引；词频缺失时保持稳定默认顺序。
+- 103 项自动测试和 TypeScript 类型检查通过；待 Android Release 构建和 APK 验收。

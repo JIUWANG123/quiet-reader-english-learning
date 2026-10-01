@@ -15,6 +15,7 @@ export type VocabularyItem = {
   source_book_title: string | null;
   created_at: number;
   lookup_count: number;
+  occurrence_count: number;
   familiarity: number;
   due_at: number;
   interval_days: number;

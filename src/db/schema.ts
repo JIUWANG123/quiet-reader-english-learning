@@ -1,4 +1,4 @@
-export const SCHEMA_VERSION = 12;
+export const SCHEMA_VERSION = 13;
 export const learningSchema = `CREATE TABLE IF NOT EXISTS sentence_notes (
  book_id TEXT NOT NULL REFERENCES books(id) ON DELETE CASCADE,
  section_key TEXT NOT NULL, start_offset INTEGER NOT NULL, end_offset INTEGER NOT NULL,
@@ -65,6 +65,13 @@ CREATE TABLE IF NOT EXISTS book_pages (
   page_index INTEGER NOT NULL, text TEXT NOT NULL, heading TEXT,
   PRIMARY KEY(book_id, page_index)
 );
+CREATE TABLE IF NOT EXISTS book_word_frequency (
+ book_id TEXT NOT NULL REFERENCES books(id) ON DELETE CASCADE,
+ lemma TEXT NOT NULL COLLATE NOCASE,
+ occurrence_count INTEGER NOT NULL DEFAULT 0,
+ PRIMARY KEY(book_id,lemma)
+);
+CREATE INDEX IF NOT EXISTS book_word_frequency_count ON book_word_frequency(book_id,occurrence_count DESC);
 CREATE TABLE IF NOT EXISTS reading_progress (
   book_id TEXT PRIMARY KEY NOT NULL REFERENCES books(id) ON DELETE CASCADE,
   page_index INTEGER NOT NULL DEFAULT 0,

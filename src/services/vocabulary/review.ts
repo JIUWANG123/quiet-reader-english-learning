@@ -1,12 +1,13 @@
 import type {SQLiteDatabase} from 'expo-sqlite';
 import type {VocabularyItem} from './repository';
 export type FrequencyFilter='all'|'high'|'medium'|'low';
-export type Filters={book:string; familiarity:number; due:'all'|'due'|'new'; frequency?:FrequencyFilter};
-export const defaultFilters:Filters={book:'all',familiarity:-1,due:'all',frequency:'all'};
+ export type FrequencySort='recent'|'frequency_desc'|'frequency_asc';
+ export type Filters={book:string; familiarity:number; due:'all'|'due'|'new'; frequency?:FrequencyFilter; sort?:FrequencySort};
+ export const defaultFilters:Filters={book:'all',familiarity:-1,due:'all',frequency:'all',sort:'frequency_desc'};
 export type StudyOrder='default'|'frequency';
 export function filterWords<T extends VocabularyItem>(words:T[],f:Filters,now=Date.now()){
  const frequency=f.frequency??'all';
- return words.filter(w=>(f.book==='all'||(f.book==='deleted'?(w.source_books?.some(b=>b.id===null)??w.source_book_id===null):(w.source_books?.some(b=>b.id===f.book)??w.source_book_id===f.book)))&&(f.familiarity<0||w.familiarity===f.familiarity)&&(f.due==='all'||(f.due==='new'?w.due_at===0:w.due_at<=now))&&(frequency==='all'||(frequency==='high'?w.lookup_count>=5:frequency==='medium'?w.lookup_count>=2&&w.lookup_count<=4:w.lookup_count===1)));
+ return words.filter(w=>(f.book==='all'||(f.book==='deleted'?(w.source_books?.some(b=>b.id===null)??w.source_book_id===null):(w.source_books?.some(b=>b.id===f.book)??w.source_book_id===f.book)))&&(f.familiarity<0||w.familiarity===f.familiarity)&&(f.due==='all'||(f.due==='new'?w.due_at===0:w.due_at<=now))&&(frequency==='all'||(frequency==='high'?w.occurrence_count>=5:frequency==='medium'?w.occurrence_count>=2&&w.occurrence_count<=4:w.occurrence_count===1)));
 }
 export function localDay(now=Date.now()){const d=new Date(now);return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;}
 export type Plan={newLimit:number;reviewLimit:number;order?:StudyOrder};

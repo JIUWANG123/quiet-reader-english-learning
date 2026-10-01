@@ -119,12 +119,12 @@ export async function studyAdmissions(db:SQLiteDatabase,now=Date.now()){
  await ensure(db);
  return (await db.getFirstAsync<{newWords:number;reviewWords:number}>('SELECT COALESCE(SUM(was_new),0) AS newWords,COALESCE(SUM(1-was_new),0) AS reviewWords FROM study_admissions WHERE day=?',localDay(now)))!;
 }
-export async function studyCandidates<T extends {word:string;due_at:number;created_at:number;lookup_count?:number}>(db:SQLiteDatabase,words:T[],plan:{newLimit:number;reviewLimit:number;order?:'default'|'frequency'},now=Date.now()){
+export async function studyCandidates<T extends {word:string;due_at:number;created_at:number;occurrence_count?:number}>(db:SQLiteDatabase,words:T[],plan:{newLimit:number;reviewLimit:number;order?:'default'|'frequency'},now=Date.now()){
  const usage=await studyAdmissions(db,now);
  const admitted=await db.getAllAsync<{word:string}>('SELECT word FROM study_admissions WHERE day=?',localDay(now));
  const used=new Set(admitted.map(row=>row.word));
  const eligible=words.filter(word=>!used.has(word.word));
- const byFrequency=(a:T,b:T)=>((b.lookup_count??0)-(a.lookup_count??0))||a.created_at-b.created_at||a.word.localeCompare(b.word);
+ const byFrequency=(a:T,b:T)=>((b.occurrence_count??0)-(a.occurrence_count??0))||a.created_at-b.created_at||a.word.localeCompare(b.word);
  const reviews=eligible.filter(w=>w.due_at>0&&w.due_at<=now).sort((a,b)=>a.due_at-b.due_at||(plan.order==='frequency'?byFrequency(a,b):a.created_at-b.created_at)||a.word.localeCompare(b.word));
  const fresh=eligible.filter(w=>w.due_at===0).sort(plan.order==='frequency'?byFrequency:(a,b)=>a.created_at-b.created_at||a.word.localeCompare(b.word));
  return [...reviews.slice(0,Math.max(0,plan.reviewLimit-usage.reviewWords)),...fresh.slice(0,Math.max(0,plan.newLimit-usage.newWords))];

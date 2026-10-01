@@ -58,10 +58,10 @@ test('book, familiarity and due filters combine',()=>{
  assert.equal(nextReview(7,3,0).days,18);assert.throws(()=>nextReview(0,4,0));
 });
 test('frequency filters use lookup_count bands',()=>{
- const rows=[1,2,4,5,9].map((lookup_count,i)=>({word:String(i),source_book_id:null,familiarity:0,due_at:0,lookup_count} as VocabularyItem));
- assert.deepEqual(filterWords(rows,{...defaultFilters,frequency:'low'}).map(w=>w.lookup_count),[1]);
- assert.deepEqual(filterWords(rows,{...defaultFilters,frequency:'medium'}).map(w=>w.lookup_count),[2,4]);
- assert.deepEqual(filterWords(rows,{...defaultFilters,frequency:'high'}).map(w=>w.lookup_count),[5,9]);
+ const rows=[1,2,4,5,9].map((occurrence_count,i)=>({word:String(i),source_book_id:null,familiarity:0,due_at:0,lookup_count:1,occurrence_count} as VocabularyItem));
+ assert.deepEqual(filterWords(rows,{...defaultFilters,frequency:'low'}).map(w=>w.occurrence_count),[1]);
+ assert.deepEqual(filterWords(rows,{...defaultFilters,frequency:'medium'}).map(w=>w.occurrence_count),[2,4]);
+ assert.deepEqual(filterWords(rows,{...defaultFilters,frequency:'high'}).map(w=>w.occurrence_count),[5,9]);
 });
 test('legacy study plans default to chronological order and persist frequency order',async()=>{
  assert.deepEqual(normalizePlan({newLimit:3,reviewLimit:4}),{newLimit:3,reviewLimit:4,order:'default'});
@@ -73,7 +73,7 @@ test('frequency priority sorts within due and fresh groups without changing grou
 }finally{native.close()}
 });
 test('frequency bands are applied in SQL before pagination',async()=>{
- const {native,db}=fixture();try{for(const [word,count] of [['one',1],['two',2],['four',4],['five',5]] as const)native.prepare('INSERT INTO vocabulary(word,lemma,created_at,lookup_count) VALUES(?,?,1,?)').run(word,word,count);const low=await listStudyWords(db,true,{frequency:'low',limit:10});const medium=await listStudyWords(db,true,{frequency:'medium',limit:1});const high=await listStudyWords(db,true,{frequency:'high',limit:10});assert.deepEqual(low.map(w=>w.lookup_count),[1]);assert.deepEqual(medium.map(w=>w.lookup_count),[4]);assert.deepEqual(high.map(w=>w.lookup_count),[5]);}finally{native.close()}
+ const {native,db}=fixture();try{native.prepare("INSERT INTO books(id,title,format,file_name,created_at) VALUES('book','Book','txt','book.txt',1)").run();for(const [word,count] of [['one',1],['two',2],['four',4],['five',5]] as const){native.prepare("INSERT INTO vocabulary(word,lemma,source_book_id,created_at,lookup_count) VALUES(?,?, 'book',1,?)").run(word,word,count);native.prepare('INSERT INTO book_word_frequency(book_id,lemma,occurrence_count) VALUES(?,?,?)').run('book',word,count);}const low=await listStudyWords(db,true,{frequency:'low',limit:10});const medium=await listStudyWords(db,true,{frequency:'medium',limit:1});const high=await listStudyWords(db,true,{frequency:'high',limit:10});assert.deepEqual(low.map(w=>w.occurrence_count),[1]);assert.deepEqual(medium.map(w=>w.occurrence_count),[4]);assert.deepEqual(high.map(w=>w.occurrence_count),[5]);}finally{native.close()}
 });
 test('repeated marking preserves first sentence and review state',async()=>{
  const {native,db}=fixture();try{
