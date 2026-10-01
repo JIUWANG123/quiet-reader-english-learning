@@ -769,3 +769,7 @@
 - 收藏查询和默认排序改用来源书籍 occurrence_count；背词高频优先改用正文出现次数，lookup_count 继续表示查词次数。
 - 旧 TXT 书籍在词典迁移时自动补建索引；词频缺失时保持稳定默认顺序。
 - 103 项自动测试和 TypeScript 类型检查通过；待 Android Release 构建和 APK 验收。
+- Android Release 构建成功：QuietReader 1.11.6，versionCode 49，arm64-v8a。
+- APK v2 签名验证通过，证书 SHA-256 fac61745dc0903786fb9ede62a962b399f7348f0bb6f899b8332667591033b9c，与 1.11.5 一致。
+- APK SHA-256：4A82A992425F85DBAE5940EB7AAC58FFC2738ECD27A9A0C1B6BBFC89FD69B005。
+- GitHub Release：https://github.com/JIUWANG123/quiet-reader-english-learning/releases/tag/v1.11.6
