@@ -775,3 +775,6 @@
 - GitHub Release：https://github.com/JIUWANG123/quiet-reader-english-learning/releases/tag/v1.11.6
 - 修正旧 TXT 词频补建实现，避免引入原生文件系统依赖；103 项测试和类型检查重新通过。
 - 版本提升至 1.11.7 / Android versionCode 50，重新构建最终 APK。
+- 最终 APK：QuietReader 1.11.7，versionCode 50，arm64-v8a。
+- APK v2 签名通过，证书与此前版本一致；SHA-256 C59E598F96FB2FF7476973DC439C04EB252AEED1A69D89EA2A0FF9D7B32964DB。
+- GitHub Release：https://github.com/JIUWANG123/quiet-reader-english-learning/releases/tag/v1.11.7
