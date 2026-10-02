@@ -781,3 +781,7 @@
 - 修复上下滚动模式音量键误走 EPUB 翻页路径：滚动模式现在不再启用音量键翻页，避免 paper.turn/goNext/goPrevious 造成内容消失、旧位置回退和预览锁竞态。
 - 空白点击任务栏专项回归通过；104 项自动测试、类型检查和手势专项通过。
 - 版本提升至 1.11.8 / Android versionCode 51，待 Android Release 构建和 APK 验收。
+- 最终 APK：QuietReader 1.11.8，versionCode 51，arm64-v8a。
+- 修复上下滚动模式音量键翻页竞态；104 项自动测试、类型检查和浏览器手势专项通过。
+- APK v2 签名通过，证书与之前版本一致；SHA-256 9FD1F10B0E2645EBBB1AA8654CFE5189A90497B52A8FEEABF5403F923E8E2BB9。
+- GitHub Release：https://github.com/JIUWANG123/quiet-reader-english-learning/releases/tag/v1.11.8
