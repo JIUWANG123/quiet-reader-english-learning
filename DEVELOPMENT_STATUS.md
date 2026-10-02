@@ -778,3 +778,6 @@
 - 最终 APK：QuietReader 1.11.7，versionCode 50，arm64-v8a。
 - APK v2 签名通过，证书与此前版本一致；SHA-256 C59E598F96FB2FF7476973DC439C04EB252AEED1A69D89EA2A0FF9D7B32964DB。
 - GitHub Release：https://github.com/JIUWANG123/quiet-reader-english-learning/releases/tag/v1.11.7
+- 修复上下滚动模式音量键误走 EPUB 翻页路径：滚动模式现在不再启用音量键翻页，避免 paper.turn/goNext/goPrevious 造成内容消失、旧位置回退和预览锁竞态。
+- 空白点击任务栏专项回归通过；104 项自动测试、类型检查和手势专项通过。
+- 版本提升至 1.11.8 / Android versionCode 51，待 Android Release 构建和 APK 验收。

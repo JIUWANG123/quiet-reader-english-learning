@@ -2,6 +2,7 @@ import {useCallback,useRef} from 'react';
 import {AppState,Platform} from 'react-native';
 import {useFocusEffect} from 'expo-router';
 import {requireOptionalNativeModule} from 'expo';
+export {volumeKeysEnabledForReadingMode} from './volumePolicy';
 type Keys={setEnabled:(enabled:boolean)=>void;addListener:(event:string,fn:(event:{direction:number})=>void)=>{remove:()=>void}};
 const keys=Platform.OS==='android'?requireOptionalNativeModule<Keys>('ReaderKeys'):null;
 export const volumeKeysAvailable=Boolean(keys);

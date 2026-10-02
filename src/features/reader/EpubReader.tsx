@@ -16,6 +16,7 @@ import {Bookmarks} from './Bookmarks';
 import {ReaderChrome} from './ReaderChrome';
 import type {ChapterText} from '../ai/ChapterTranslation';
 import {useVolumePageTurn} from './useVolumePageTurn';
+import {volumeKeysEnabledForReadingMode} from './volumePolicy';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, FlatList, Modal, ScrollView, Text, View, useWindowDimensions } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -148,7 +149,7 @@ function EpubReaderSession({ preparedSource,onToggleChrome,chapterRequest,onChap
     return ()=>clearTimeout(timer);
   },[ready,failure,pool.current.id,book.id]);
 
-  useVolumePageTurn(settings.volumePageTurn&&!keysBlocked&&ready&&!selectionActive&&!aiSelection&&!showContents&&!failure,turn);
+  useVolumePageTurn(volumeKeysEnabledForReadingMode(settings.volumePageTurn&&!keysBlocked&&ready&&!selectionActive&&!aiSelection&&!showContents&&!failure,settings.readingMode),turn);
   const uri = useMemo(() => preparedSource??new File(new Directory(Paths.document, 'books'), book.file_name).uri, [book.file_name,preparedSource]);
   const theme = useMemo(() => ({
     body: {

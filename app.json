@@ -2,7 +2,7 @@
   "expo": {
     "name": "Quiet Reader",
     "slug": "quiet-reader",
-    "version": "1.11.7",
+    "version": "1.11.8",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "automatic",
@@ -13,7 +13,7 @@
     },
     "android": {
       "package": "com.quietreader.personal",
-      "versionCode": 50,
+      "versionCode": 51,
       "adaptiveIcon": {
         "backgroundColor": "#FFF0BA",
         "foregroundImage": "./assets/android-icon-foreground.png",
