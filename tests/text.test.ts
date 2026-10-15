@@ -42,7 +42,7 @@ test('corrupt settings recover and unreasonable settings are clamped', () => {
   assert.equal(parseSettings('{"readingMode":"tap","pageAnimation":false}').readingMode,'tap');
   assert.equal(parseSettings('{"readingMode":"tap","pageAnimation":false}').pageAnimation,false);
   assert.equal(parseSettings('{"readingMode":"scroll"}').readingMode,'scroll');
-  assert.equal(parseSettings('{"readingMode":"invalid"}').readingMode,'swipe');
+  assert.equal(parseSettings('{"readingMode":"invalid"}').readingMode,'scroll');
   assert.equal(parseSettings('{bad').theme, 'paper');
   assert.equal(parseSettings('null').fontSize, 21);
   assert.equal(parseSettings('{"theme":"blue","fontSize":100}').fontSize, 32);

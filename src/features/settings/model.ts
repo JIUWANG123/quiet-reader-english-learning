@@ -1,6 +1,10 @@
 import type { ReaderSettings } from '../../types';
 import { clamp } from '../../services/books/text';
-export const defaults: ReaderSettings = { theme: 'paper', fontSize: 21, lineHeight: 1.7, margin: 26, readingMode: 'swipe', pageAnimation: true, volumePageTurn: false, paragraphTranslation: false };
+// Scroll is the default because it renders through a single WebView, while the
+// swipe mode keeps three epub.js documents alive at once and the renderer process
+// is killed on a phone under that load. Swipe stays available in settings; it must
+// not be the mode a fresh install lands in until it is rebuilt on one document.
+export const defaults: ReaderSettings = { theme: 'paper', fontSize: 21, lineHeight: 1.7, margin: 26, readingMode: 'scroll', pageAnimation: true, volumePageTurn: false, paragraphTranslation: false };
 export function parseSettings(raw?: string): ReaderSettings {
   try {
     const value = JSON.parse(raw ?? '{}');
