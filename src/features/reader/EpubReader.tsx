@@ -132,7 +132,30 @@ function EpubReaderSession({ preparedSource,onToggleChrome,chapterRequest,onChap
   const leave=useCallback(()=>{if(leaving.current)return;leaving.current=true;injectJavascript('window.qrProgress?.capture(0);true;');setTimeout(()=>{if(leaving.current){leaving.current=false;onLeave();}},1800);},[injectJavascript,onLeave]);
   useEffect(()=>{if(ready)injectJavascript(epubPageMotion);},[ready,settings.pageAnimation,injectJavascript]);
   useEffect(()=>{if(ready)injectJavascript(`window.qrReader?.setReadingMode(${JSON.stringify(settings.readingMode==='scroll'?'scroll':'native')});window.qrInteractionBlocked=${Boolean(keysBlocked||bookmarksOpen||aiSelection||showContents)};true;`);},[ready,settings.readingMode,keysBlocked,bookmarksOpen,aiSelection,showContents,injectJavascript]);
-  const turn=(direction:number)=>{if(!ready||interaction.current||selectionActive||bookmarksOpen||keysBlocked||aiSelection||showContents)return;if(settings.readingMode!=='scroll'){stack.current?.turn(direction>0?1:-1);return;}injectJavascript('window.qrReader?.cancelPendingSelection();true;');void paper.turn(direction,()=>{if(direction>0)goNext({keepScrollOffset:true});else goPrevious({keepScrollOffset:true});});};
+  // A WebView renderer that Chromium kills under memory pressure goes silent: it
+  // never repaints and never reports an error, and no turn waits for a paint that
+  // will never arrive, so the reader would sit on a loading page indefinitely.
+  // Silence after a turn is the only signal left, and the recovery UI that already
+  // handles restore failures is the right response to it.
+  const aliveAt=useRef(0);
+  const aliveTimer=useRef<ReturnType<typeof setTimeout>|null>(null);
+  const expectAlive=()=>{
+    if(aliveTimer.current)clearTimeout(aliveTimer.current);
+    aliveAt.current=0;
+    // Without a live document there is nothing to ask, so never blame the renderer.
+    if(!controller.current)return;
+    try{controller.current.injectJavascript(`window.ReactNativeWebView.postMessage(JSON.stringify({type:'qr-alive'}));true;`);}catch{/* A dead renderer rejects injection. */}
+    aliveTimer.current=setTimeout(()=>{
+      aliveTimer.current=null;
+      if(aliveAt.current)return;
+      traceReading('restore-error',{bookId:book.id,code:'RENDERER_UNRESPONSIVE'});
+      setFailure('阅读器已无响应，原进度已保留。请重试恢复。');
+    },6000);
+  };
+  // A restore in progress clears readiness, which also cancels a pending check:
+  // the page is legitimately quiet while it reloads, so silence proves nothing there.
+  useEffect(()=>()=>{if(aliveTimer.current){clearTimeout(aliveTimer.current);aliveTimer.current=null;}},[ready]);
+  const turn=(direction:number)=>{if(!ready||interaction.current||selectionActive||bookmarksOpen||keysBlocked||aiSelection||showContents)return;expectAlive();if(settings.readingMode!=='scroll'){stack.current?.turn(direction>0?1:-1);return;}injectJavascript('window.qrReader?.cancelPendingSelection();true;');void paper.turn(direction,()=>{if(direction>0)goNext({keepScrollOffset:true});else goPrevious({keepScrollOffset:true});});};
   const flow = settings.readingMode === 'scroll' ? 'scrolled-doc' : 'paginated';
   useEffect(()=>{if(ready)injectAll(`window.qrReader?.setMeaningsVisible(${meaningsVisible});true;`);},[ready,meaningsVisible,injectAll]);
   useEffect(()=>{if(ready)injectJavascript(`window.qrEpubParagraphs?.setVisible(${settings.paragraphTranslation});true;`);},[ready,settings.paragraphTranslation,injectJavascript]);
@@ -232,6 +255,7 @@ function EpubReaderSession({ preparedSource,onToggleChrome,chapterRequest,onChap
         onStarted={()=>{if(!active)return;traceReading('started',{bookId:book.id,cfi:lastLocation.current??undefined,mode:settings.readingMode});restored.current=false;setReady(false);setSelectionActive(false);setSelectedSentence(null);appliedTheme.current=initialTheme.current;}}
         onRendered={()=>{controllers.current.get(document.id)?.injectJavascript('window.qrDecoratePage?.();true;');}}
         onWebViewMessage={(event: unknown) => {
+          aliveAt.current=Date.now();
           const data = event as AIRequest & {type?: string; location?: Location; code?: string;revision?:number};
           const live=([poolRef.current.current,poolRef.current.previous,poolRef.current.next]).find(item=>item?.id===document.id);
           if(!live||(data?.revision!==undefined&&data.revision!==(live.revision??0)))return;
