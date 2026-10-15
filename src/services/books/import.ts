@@ -47,7 +47,21 @@ export async function importBook(db: SQLiteDatabase) {
       try {
         for (let i = 0; i < pages.length; i++) await statement.executeAsync([id, i, pages[i].text, pages[i].heading]);
       } finally { await statement.finalizeAsync(); }
-      const frequencies=txtFrequency??epubIndex?.wordFrequency??{};for(const [lemma,count] of Object.entries(frequencies))await tx.runAsync('INSERT INTO book_word_frequency(book_id,lemma,occurrence_count) VALUES(?,?,?)',id,lemma,count);
+      // One row per runAsync costs three bridge round-trips (prepare, execute,
+      // finalize) plus a fresh statement compile inside SQLite. A real EPUB has
+      // ~12k distinct lemmas, so that loop alone froze the app for about a
+      // minute on device while the runtime collected garbage non-stop. Multi-row
+      // chunks keep the same rows in the same order for one crossing per chunk.
+      const frequencies=txtFrequency??epubIndex?.wordFrequency??{};
+      const rows=Object.entries(frequencies);
+      // 200 rows is 600 bound parameters, which stays under SQLite's variable
+      // limit even on builds that still use the old 999 ceiling.
+      const chunkSize=200;
+      for(let start=0;start<rows.length;start+=chunkSize){
+        const chunk=rows.slice(start,start+chunkSize);
+        const values=chunk.map(()=>'(?,?,?)').join(',');
+        await tx.runAsync(`INSERT INTO book_word_frequency(book_id,lemma,occurrence_count) VALUES ${values}`,...chunk.flatMap(([lemma,count])=>[id,lemma,count]));
+      }
     });
     if (format === 'epub') {
       const { startEpubWarmup } = await import('./warmup');
