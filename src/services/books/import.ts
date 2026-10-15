@@ -7,16 +7,24 @@ import { buildEpubIndex, type EpubIndex } from './epubIndex';
 import {countWordOccurrences} from './wordFrequency';
 
 export async function importBook(db: SQLiteDatabase) {
+  // Importing a book is the slowest thing this app does, and a stall is invisible
+  // in a logcat full of garbage-collection noise. These probes are meant to stay:
+  //   adb logcat --pid=$(adb shell pidof -s com.quietreader.personal) | Select-String qr-import
+  // If they never appear, the running bundle predates this file.
+  const started=Date.now();
+  const mark=(stage:string,detail?:unknown)=>console.log(`[qr-import] ${stage} ${Date.now()-started}ms${detail===undefined?'':' '+JSON.stringify(detail)}`);
   const result = await DocumentPicker.getDocumentAsync({ type: '*/*', copyToCacheDirectory: true, multiple: false });
-  if (result.canceled) return null;
+  if (result.canceled) { mark('canceled'); return null; }
   const asset = result.assets[0];
   const source = new File(asset.uri);
+  mark('picked', { name: asset.name, bytes: asset.size ?? source.size });
   let destination: File | undefined;
   try {
     const format = fileFormat(asset.name);
     if ((asset.size ?? source.size) > MAX_IMPORT_BYTES) throw new Error('当前支持 128 MB 以内的书籍。');
     const pages = format === 'txt' ? paginateText(normalizeText(await source.text())) : [];
     const txtFrequency = format === 'txt' ? countWordOccurrences(pages.map(page=>page.text).join('\n')) : undefined;
+    mark('read-pages', { format, pages: pages.length });
     const title = asset.name.replace(/\.(txt|epub)$/i, '');
     // Re-importing the same filename reuses the existing book identity so learning data survives.
     const existing = await db.getFirstAsync<{id:string;file_name:string;created_at:number}>(
@@ -29,13 +37,23 @@ export async function importBook(db: SQLiteDatabase) {
       const chapterDir=new Directory(directory,`${id}.chapters`); chapterDir.create({intermediates:true,idempotent:true});
       // The index drives word frequency and warmup only; epub.js reads the
       // archive itself. A book that renders must import even if indexing fails.
-      try { epubIndex=await buildEpubIndex(source,{file:name=>new File(chapterDir,name)}); }
-      catch { if(chapterDir.exists)chapterDir.delete(); }
+      try {
+        epubIndex=await buildEpubIndex(source,{file:name=>new File(chapterDir,name)});
+        mark('indexed',{chapters:epubIndex.chapters.length,words:Object.keys(epubIndex.wordFrequency).length});
+      }
+      catch(error){ mark('index-failed',{message:error instanceof Error?error.message:String(error)}); if(chapterDir.exists)chapterDir.delete(); }
     }
     destination = new File(directory, `${id}.${format}`);
     if(existing?.file_name && existing.file_name!==destination.name){const old=new File(directory,existing.file_name);if(old.exists)old.delete();}
     source.copy(destination);
-    if(epubIndex){const indexFile=new File(directory,`${id}.epub-index.json`);indexFile.write(JSON.stringify(epubIndex));}
+    mark('copied');
+    if(epubIndex){const indexFile=new File(directory,`${id}.epub-index.json`);indexFile.write(JSON.stringify(epubIndex));mark('index-written');}
+    // One row per runAsync costs three bridge round-trips (prepare, execute,
+    // finalize) plus a fresh statement compile inside SQLite. A real EPUB has
+    // ~12k distinct lemmas, so that loop alone froze the app for about a minute
+    // on device while the runtime collected garbage non-stop. Multi-row chunks
+    // keep the same rows in the same order for one crossing per chunk.
+    const frequencyRows=Object.entries(txtFrequency??epubIndex?.wordFrequency??{});
     await db.withExclusiveTransactionAsync(async tx => {
       await tx.runAsync(`INSERT INTO books(id,title,format,file_name,created_at,page_count) VALUES(?,?,?,?,?,?)
         ON CONFLICT(id) DO UPDATE SET file_name=excluded.file_name,page_count=excluded.page_count`,
@@ -47,28 +65,24 @@ export async function importBook(db: SQLiteDatabase) {
       try {
         for (let i = 0; i < pages.length; i++) await statement.executeAsync([id, i, pages[i].text, pages[i].heading]);
       } finally { await statement.finalizeAsync(); }
-      // One row per runAsync costs three bridge round-trips (prepare, execute,
-      // finalize) plus a fresh statement compile inside SQLite. A real EPUB has
-      // ~12k distinct lemmas, so that loop alone froze the app for about a
-      // minute on device while the runtime collected garbage non-stop. Multi-row
-      // chunks keep the same rows in the same order for one crossing per chunk.
-      const frequencies=txtFrequency??epubIndex?.wordFrequency??{};
-      const rows=Object.entries(frequencies);
       // 200 rows is 600 bound parameters, which stays under SQLite's variable
       // limit even on builds that still use the old 999 ceiling.
       const chunkSize=200;
-      for(let start=0;start<rows.length;start+=chunkSize){
-        const chunk=rows.slice(start,start+chunkSize);
+      for(let start=0;start<frequencyRows.length;start+=chunkSize){
+        const chunk=frequencyRows.slice(start,start+chunkSize);
         const values=chunk.map(()=>'(?,?,?)').join(',');
         await tx.runAsync(`INSERT INTO book_word_frequency(book_id,lemma,occurrence_count) VALUES ${values}`,...chunk.flatMap(([lemma,count])=>[id,lemma,count]));
       }
     });
+    mark('committed',{pageRows:pages.length,frequencyRows:frequencyRows.length,chunks:Math.ceil(frequencyRows.length/200)});
     if (format === 'epub') {
       const { startEpubWarmup } = await import('./warmup');
       startEpubWarmup(id, destination.uri);
     }
+    mark('done',{format});
     return { id, format };
   } catch (error) {
+    mark('failed',{message:error instanceof Error?error.message:String(error)});
     if (destination?.exists) destination.delete();
     throw error;
   } finally {
