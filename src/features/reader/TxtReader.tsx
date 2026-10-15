@@ -76,7 +76,10 @@ export function TxtReader({searchHit,keysBlocked,bookId,sectionKey,text,initialF
   const positions={previous:Math.max(0,screen.y-screen.step),current:screen.y,next:Math.min(screen.max,screen.y+screen.step)};
   // A live document keeps its identity when fonts, translations or scroll anchoring
   // change its coordinates. Only a committed turn promotes a different document.
-  const ids={previous:positions.previous===screen.y?screen.id:sectionKey+':'+positions.previous,current:screen.id,next:positions.next===screen.y?screen.id:sectionKey+':'+positions.next};
+  // At boot screen.max is still 0, so previous, current and next all resolve to
+  // screen.id. Qualifying every id by its slot keeps the three children distinct
+  // while neighbours left in the same document still fold back onto screen.id.
+  const ids={previous:positions.previous===screen.y?screen.id:'previous:'+sectionKey+':'+positions.previous,current:screen.id,next:positions.next===screen.y?screen.id:'next:'+sectionKey+':'+positions.next};
   useEffect(()=>{const valid=new Set(Object.values(ids));setReady(old=>Object.fromEntries(Object.entries(old).filter(([key])=>valid.has(key))));},[ids.previous,ids.current,ids.next]);
   const renderScreen=(slot:'previous'|'current'|'next')=>{
     if(slot!=='current'&&(settings.readingMode==='scroll'||positions[slot]===screen.y))return null;
