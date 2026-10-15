@@ -18,7 +18,7 @@ import type {ChapterText} from '../ai/ChapterTranslation';
 import {useVolumePageTurn} from './useVolumePageTurn';
 import {volumeKeysEnabledForReadingMode} from './volumePolicy';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, Alert, FlatList, Modal, ScrollView, Text, View, useWindowDimensions } from 'react-native';
+import { ActivityIndicator, Alert, AppState, FlatList, Modal, ScrollView, Text, View, useWindowDimensions } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Directory, File, Paths } from 'expo-file-system';
 import { type Location, type Section, type Toc } from '@epubjs-react-native/core';
@@ -74,6 +74,7 @@ function EpubReaderSession({ preparedSource,onToggleChrome,chapterRequest,onChap
   const [selectedSentence,setSelectedSentence]=useState<AIRequest|null>(null);
   const {marks,sentenceMarks,meaningsVisible,error:marksError,retry:retryMarks}=useMarks(book.id);
   const [ready,setReady]=useState(false);
+const [failure, setFailure] = useState('');
   const [sentenceTranslation,setSentenceTranslation]=useState<{text:string;value:string}|null>(null);
   const [aiSelection, setAISelection] = useState<AIRequest | null>(null);
   const [searchOpen,setSearchOpen]=useState(false);
@@ -133,28 +134,34 @@ function EpubReaderSession({ preparedSource,onToggleChrome,chapterRequest,onChap
   useEffect(()=>{if(ready)injectJavascript(epubPageMotion);},[ready,settings.pageAnimation,injectJavascript]);
   useEffect(()=>{if(ready)injectJavascript(`window.qrReader?.setReadingMode(${JSON.stringify(settings.readingMode==='scroll'?'scroll':'native')});window.qrInteractionBlocked=${Boolean(keysBlocked||bookmarksOpen||aiSelection||showContents)};true;`);},[ready,settings.readingMode,keysBlocked,bookmarksOpen,aiSelection,showContents,injectJavascript]);
   // A WebView renderer that Chromium kills under memory pressure goes silent: it
-  // never repaints and never reports an error, and no turn waits for a paint that
-  // will never arrive, so the reader would sit on a loading page indefinitely.
-  // Silence after a turn is the only signal left, and the recovery UI that already
-  // handles restore failures is the right response to it.
-  const aliveAt=useRef(0);
-  const aliveTimer=useRef<ReturnType<typeof setTimeout>|null>(null);
-  const expectAlive=()=>{
-    if(aliveTimer.current)clearTimeout(aliveTimer.current);
-    aliveAt.current=0;
-    // Without a live document there is nothing to ask, so never blame the renderer.
-    if(!controller.current)return;
-    try{controller.current.injectJavascript(`window.ReactNativeWebView.postMessage(JSON.stringify({type:'qr-alive'}));true;`);}catch{/* A dead renderer rejects injection. */}
-    aliveTimer.current=setTimeout(()=>{
-      aliveTimer.current=null;
-      if(aliveAt.current)return;
+  // never repaints and never reports an error, and page turns route through the
+  // page stack straight into the pool rather than waiting for a paint, so nothing
+  // in the update path notices. Every message proves the renderer is alive; the
+  // ping exists only to force one while the reader is otherwise idle.
+  const aliveAt=useRef(Date.now());
+  const aliveMisses=useRef(0);
+  const appActive=useRef(true);
+  const expectAlive=()=>{aliveAt.current=Date.now();aliveMisses.current=0;};
+  useEffect(()=>{
+    const subscription=AppState.addEventListener('change',state=>{appActive.current=state==='active';expectAlive();});
+    return ()=>subscription.remove();
+  },[]);
+  useEffect(()=>{
+    if(!ready||failure)return;
+    expectAlive();
+    const timer=setInterval(()=>{
+      // A backgrounded or reloading page is legitimately silent, so silence proves
+      // nothing there. Two silent checks in a row are needed before blaming it,
+      // which keeps a temporarily busy WebView from raising a false alarm.
+      if(!appActive.current||!controller.current){expectAlive();return;}
+      try{controller.current.injectJavascript(`window.ReactNativeWebView.postMessage(JSON.stringify({type:'qr-alive'}));true;`);}catch{/* A dead renderer rejects injection. */}
+      if(Date.now()-aliveAt.current<8000)return;
+      if(++aliveMisses.current<2)return;
       traceReading('restore-error',{bookId:book.id,code:'RENDERER_UNRESPONSIVE'});
       setFailure('阅读器已无响应，原进度已保留。请重试恢复。');
-    },6000);
-  };
-  // A restore in progress clears readiness, which also cancels a pending check:
-  // the page is legitimately quiet while it reloads, so silence proves nothing there.
-  useEffect(()=>()=>{if(aliveTimer.current){clearTimeout(aliveTimer.current);aliveTimer.current=null;}},[ready]);
+    },4000);
+    return ()=>clearInterval(timer);
+  },[ready,failure,book.id]);
   const turn=(direction:number)=>{if(!ready||interaction.current||selectionActive||bookmarksOpen||keysBlocked||aiSelection||showContents)return;expectAlive();if(settings.readingMode!=='scroll'){stack.current?.turn(direction>0?1:-1);return;}injectJavascript('window.qrReader?.cancelPendingSelection();true;');void paper.turn(direction,()=>{if(direction>0)goNext({keepScrollOffset:true});else goPrevious({keepScrollOffset:true});});};
   const flow = settings.readingMode === 'scroll' ? 'scrolled-doc' : 'paginated';
   useEffect(()=>{if(ready)injectAll(`window.qrReader?.setMeaningsVisible(${meaningsVisible});true;`);},[ready,meaningsVisible,injectAll]);
@@ -164,7 +171,6 @@ function EpubReaderSession({ preparedSource,onToggleChrome,chapterRequest,onChap
   const [toc, setToc] = useState<Toc>([]);
   const [progress, setProgress] = useState(book.progress);
   const [section, setSection] = useState<Section | null>(null);
-  const [failure, setFailure] = useState('');
   // Native watchdog covers failures before the WebView restore script starts.
   useEffect(()=>{
     if(ready||failure)return;
@@ -255,7 +261,7 @@ function EpubReaderSession({ preparedSource,onToggleChrome,chapterRequest,onChap
         onStarted={()=>{if(!active)return;traceReading('started',{bookId:book.id,cfi:lastLocation.current??undefined,mode:settings.readingMode});restored.current=false;setReady(false);setSelectionActive(false);setSelectedSentence(null);appliedTheme.current=initialTheme.current;}}
         onRendered={()=>{controllers.current.get(document.id)?.injectJavascript('window.qrDecoratePage?.();true;');}}
         onWebViewMessage={(event: unknown) => {
-          aliveAt.current=Date.now();
+          aliveAt.current=Date.now();aliveMisses.current=0;
           const data = event as AIRequest & {type?: string; location?: Location; code?: string;revision?:number};
           const live=([poolRef.current.current,poolRef.current.previous,poolRef.current.next]).find(item=>item?.id===document.id);
           if(!live||(data?.revision!==undefined&&data.revision!==(live.revision??0)))return;
