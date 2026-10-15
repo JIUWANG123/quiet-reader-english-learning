@@ -4,6 +4,7 @@ import {searchLocator} from './searchLocator';
 import {SentenceActions} from './SentenceActions';
 import {epubVisualPosition} from './epubVisualPosition';
 import {prepareEpubResources} from './epubResources';
+import {cancelEpubWarmup} from '../../services/books/warmup';
 import {NativePageStack,type PageStackHandle} from './NativePageStack';
 import {createEpubPool,readyEpubDocument,turnEpubPool,invalidateEpubNeighbors} from './epubPool';
 import {epubPreviewBoot} from './epubPreviewBoot';
@@ -133,6 +134,9 @@ const [failure, setFailure] = useState('');
   const leave=useCallback(()=>{if(leaving.current)return;leaving.current=true;injectJavascript('window.qrProgress?.capture(0);true;');setTimeout(()=>{if(leaving.current){leaving.current=false;onLeave();}},1800);},[injectJavascript,onLeave]);
   useEffect(()=>{if(ready)injectJavascript(epubPageMotion);},[ready,settings.pageAnimation,injectJavascript]);
   useEffect(()=>{if(ready)injectJavascript(`window.qrReader?.setReadingMode(${JSON.stringify(settings.readingMode==='scroll'?'scroll':'native')});window.qrInteractionBlocked=${Boolean(keysBlocked||bookmarksOpen||aiSelection||showContents)};true;`);},[ready,settings.readingMode,keysBlocked,bookmarksOpen,aiSelection,showContents,injectJavascript]);
+  // Stop the hidden warmup reader as soon as this book opens: while the user is
+  // reading, that extra WebView is the most expensive thing in the renderer.
+  useEffect(()=>{cancelEpubWarmup();},[]);
   // A WebView renderer that Chromium kills under memory pressure goes silent: it
   // never repaints and never reports an error, and page turns route through the
   // page stack straight into the pool rather than waiting for a paint, so nothing
