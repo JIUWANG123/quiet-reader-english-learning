@@ -27,7 +27,10 @@ export async function importBook(db: SQLiteDatabase) {
     directory.create({ intermediates: true, idempotent: true });
     if(format==='epub') {
       const chapterDir=new Directory(directory,`${id}.chapters`); chapterDir.create({intermediates:true,idempotent:true});
-      epubIndex=await buildEpubIndex(source,{file:name=>new File(chapterDir,name)});
+      // The index drives word frequency and warmup only; epub.js reads the
+      // archive itself. A book that renders must import even if indexing fails.
+      try { epubIndex=await buildEpubIndex(source,{file:name=>new File(chapterDir,name)}); }
+      catch { if(chapterDir.exists)chapterDir.delete(); }
     }
     destination = new File(directory, `${id}.${format}`);
     if(existing?.file_name && existing.file_name!==destination.name){const old=new File(directory,existing.file_name);if(old.exists)old.delete();}
