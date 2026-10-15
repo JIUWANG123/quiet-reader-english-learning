@@ -75,7 +75,9 @@ function archiveOrder(reader:ZipReader):string[]{
 }
 
 export async function buildEpubIndex(file:File, cacheDir?:{file:(name:string)=>File}):Promise<EpubIndex>{
+ const unzipStart=Date.now();
  const zip=await JSZip.loadAsync(await file.arrayBuffer());
+ console.log(`[qr-index] unzip ${Date.now()-unzipStart}ms`);
  const reader=createReader(zip);
  const container=await readText(reader,'META-INF/container.xml');
  if(!container)throw Error('EPUB 缺少 container.xml');
@@ -127,15 +129,27 @@ export async function buildEpubIndex(file:File, cacheDir?:{file:(name:string)=>F
  if(!order.length)order=resolve(contentDocuments.map(item=>item.href));
  if(!order.length)order=resolve(archiveOrder(reader));
  const chapters:EpubChapter[]=[],wordFrequency:Record<string,number>={};
+ // A stall inside this loop was invisible until these numbers existed. Keep them.
+ let readMs=0,countMs=0,writeMs=0;
  for(const href of order){
+  let at=Date.now();
   const body=await readText(reader,href);
+  readMs+=Date.now()-at;
   // Never advertise a chapter the reader cannot open.
   if(!body?.trim())continue;
   const index=chapters.length;
-  mergeWordOccurrences(wordFrequency,countWordOccurrences(plainText(body)));
+  at=Date.now();
+  const words=countWordOccurrences(plainText(body));
+  countMs+=Date.now()-at;
+  at=Date.now();
+  mergeWordOccurrences(wordFrequency,words);
   if(cacheDir)cacheDir.file(String(index)+'.xhtml').write(body);
+  writeMs+=Date.now()-at;
   chapters.push({index,href,title:'第 '+(index+1)+' 章',size:body.length});
+  // Yielding keeps the picker spinner alive instead of freezing the whole UI.
+  if(chapters.length%8===0)await new Promise<void>(resolve=>setTimeout(resolve,0));
  }
+ console.log(`[qr-index] chapters=${chapters.length} inflate=${readMs}ms words=${countMs}ms write=${writeMs}ms`);
  if(!chapters.length)throw Error('EPUB 没有可阅读章节');
  return {version:1,createdAt:Date.now(),chapters,wordFrequency};
 }
