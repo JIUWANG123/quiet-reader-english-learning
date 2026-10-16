@@ -23,6 +23,11 @@ export function pageSlotsFor(ids:Record<PageSlot,string>):PageSlot[]{
  return [...claimed.values()].sort((a,b)=>key(a)<key(b)?-1:key(a)>key(b)?1:0);
 }
 
+/** React keys follow document identity so prepared WebViews survive slot rotation. */
+export function pageSurfacesFor(ids:Record<PageSlot,string>):{key:string;id:string;slot:PageSlot}[]{
+ return pageSlotsFor(ids).map(slot=>({key:ids[slot],id:ids[slot],slot}));
+}
+
 /** Build positions from the unique mounted slots so a shared current/neighbor
  * id can never have its visible position overwritten by a later object field. */
 export function pagePositionsFor(ids:Record<PageSlot,string>,width:number):Record<string,number>{

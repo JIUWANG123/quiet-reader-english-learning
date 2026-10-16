@@ -1,12 +1,12 @@
 import {test} from 'node:test';import assert from 'node:assert/strict';
-import {pagePositionsFor,pageSlotsFor} from '../src/features/reader/pageStack';
+import {pagePositionsFor,pageSlotsFor,pageSurfacesFor} from '../src/features/reader/pageStack';
 
 // Mirrors the identity formula in TxtReader.tsx.
 const slotIds=(screen:{id:string;y:number;max:number;step:number},sectionKey:string)=>{
  const positions={previous:Math.max(0,screen.y-screen.step),current:screen.y,next:Math.min(screen.max,screen.y+screen.step)};
  return {previous:positions.previous===screen.y?screen.id:'previous:'+sectionKey+':'+positions.previous,current:screen.id,next:positions.next===screen.y?screen.id:'next:'+sectionKey+':'+positions.next};
 };
-const keysOf=(ids:Record<'previous'|'current'|'next',string>)=>pageSlotsFor(ids).map(slot=>slot+':'+ids[slot]);
+const keysOf=(ids:Record<'previous'|'current'|'next',string>)=>pageSurfacesFor(ids).map(surface=>surface.key);
 
 // Reproduces the reported error: "Encountered two children with the same key,
 // `txt:1:initial`". screen.max is still 0 before the first measurement, so every
@@ -22,7 +22,7 @@ test('rendered surface keys are unique at boot and still mount the visible page'
  const ids=slotIds({id:'txt:1:initial',y:0,max:0,step:1},'txt:1');
  const keys=keysOf(ids);
  assert.equal(new Set(keys).size,keys.length);
- assert.deepEqual(keys,['current:txt:1:initial']);
+ assert.deepEqual(keys,['txt:1:initial']);
 });
 
 test('an id shared by two slots is mounted once, and current always wins',()=>{
@@ -59,7 +59,7 @@ test('a last screen keeps its previous document and folds next onto current',()=
  const ids=slotIds({id:'txt:9:9999',y:9999,max:9999,step:600},'txt:9');
  assert.equal(ids.next,'txt:9:9999');
  assert.equal(ids.previous,'previous:txt:9:9399');
- assert.deepEqual(keysOf(ids),['current:txt:9:9999','previous:previous:txt:9:9399']);
+ assert.deepEqual(keysOf(ids),['txt:9:9999','previous:txt:9:9399']);
 	assert.equal(new Set(keysOf(ids)).size,2);
 });
 
@@ -67,7 +67,7 @@ test('neighbouring screens keep distinct keys',()=>{
  const ids=slotIds({id:'txt:5:4096',y:4096,max:12000,step:600},'txt:5');
  assert.equal(ids.previous,'previous:txt:5:3496');
  assert.equal(ids.next,'next:txt:5:4696');
- assert.deepEqual(keysOf(ids),['current:txt:5:4096','next:next:txt:5:4696','previous:previous:txt:5:3496']);
+ assert.deepEqual(keysOf(ids),['txt:5:4096','next:txt:5:4696','previous:txt:5:3496']);
  assert.equal(new Set(keysOf(ids)).size,3);
 });
 
@@ -75,5 +75,12 @@ test('a first screen in a long document has no previous surface',()=>{
  const ids=slotIds({id:'txt:5:0',y:0,max:12000,step:600},'txt:5');
  assert.equal(ids.previous,'txt:5:0');
  assert.equal(ids.next,'next:txt:5:600');
- assert.deepEqual(keysOf(ids),['current:txt:5:0','next:next:txt:5:600']);
+ assert.deepEqual(keysOf(ids),['txt:5:0','next:txt:5:600']);
+});
+
+test('a prepared page keeps its React surface key when promoted from next to current',()=>{
+ const before=pageSurfacesFor({previous:'a',current:'b',next:'c'});
+ const after=pageSurfacesFor({previous:'b',current:'c',next:'d'});
+ assert.deepEqual(before.find(surface=>surface.id==='c'),{key:'c',id:'c',slot:'next'});
+ assert.deepEqual(after.find(surface=>surface.id==='c'),{key:'c',id:'c',slot:'current'});
 });

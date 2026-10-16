@@ -6,7 +6,7 @@ import {epubVisualPosition} from './epubVisualPosition';
 import {prepareEpubResources} from './epubResources';
 import {cancelEpubWarmup} from '../../services/books/warmup';
 import {NativePageStack,type PageStackHandle} from './NativePageStack';
-import {createEpubPool,readyEpubDocument,turnEpubPool,invalidateEpubNeighbors} from './epubPool';
+import {createEpubPool,readyEpubDocument,turnEpubPool,invalidateEpubNeighbors,shouldPreloadEpubNeighbors} from './epubPool';
 import {epubPreviewBoot} from './epubPreviewBoot';
 import {IsolatedEpubPage,type EpubPageController} from './IsolatedEpubPage';
 import {MarkStatus} from './MarkStatus';
@@ -36,6 +36,7 @@ import { useMarks } from './useMarks';
 import {TapEdges} from './PageTurn';
 import {epubPageMotion} from './epubPageMotion';
 import {epubProgressBridge} from './epubProgressBridge';
+import {readingModeForBridge} from './readingModeBridge';
 
 import {epubParagraphBridge} from './epubParagraphBridge';
 import {useSQLiteContext} from 'expo-sqlite';
@@ -96,7 +97,7 @@ function EpubReaderSession({ preparedSource,onToggleChrome,chapterRequest,onChap
   const previewJobs=useRef(new Map<string,{started:number;timer:ReturnType<typeof setTimeout>}>());
   const finishPreview=(id:string,revision:number)=>{const key=id+':'+revision,job=previewJobs.current.get(key);if(job){clearTimeout(job.timer);previewJobs.current.delete(key);}return job?Date.now()-job.started:undefined;};
   const recoverPreview=(id:string,revision:number,code:string)=>{
-    if(settings.readingMode==='scroll')return;
+    if(!shouldPreloadEpubNeighbors(settings.readingMode))return;
     const live=[poolRef.current.previous,poolRef.current.next].find(item=>item?.id===id&&(item.revision??0)===revision);
     if(!live||live.location||live.boundary)return;
     const duration=finishPreview(id,revision);
@@ -107,7 +108,7 @@ function EpubReaderSession({ preparedSource,onToggleChrome,chapterRequest,onChap
     setPool(value=>{const slot=value.previous?.id===id?'previous':value.next?.id===id?'next':null;if(!slot||(value[slot]!.revision??0)!==revision)return value;return {...value,serial:value.serial+1,[slot]:{...value[slot]!,id:String(value.serial),revision:revision+1,retries:1}};});
   };
   useEffect(()=>{
-    const documents=settings.readingMode==='scroll'?[]:[pool.previous,pool.next].filter(item=>item&&!item.location&&!item.boundary);
+    const documents=shouldPreloadEpubNeighbors(settings.readingMode)?[pool.previous,pool.next].filter(item=>item&&!item.location&&!item.boundary):[];
     const keys=new Set(documents.map(item=>item!.id+':'+(item!.revision??0)));
     for(const [key,job] of previewJobs.current){if(!keys.has(key)){clearTimeout(job.timer);previewJobs.current.delete(key);}}
     for(const document of documents){if(!document)continue;const revision=document.revision??0,key=document.id+':'+revision;if(previewJobs.current.has(key))continue;
@@ -159,9 +160,17 @@ function EpubReaderSession({ preparedSource,onToggleChrome,chapterRequest,onChap
   const leaving=useRef(false);
   const leave=useCallback(()=>{if(leaving.current)return;leaving.current=true;injectJavascript('window.qrProgress?.capture(0);true;');setTimeout(()=>{if(leaving.current){leaving.current=false;onLeave();}},1800);},[injectJavascript,onLeave]);
   useEffect(()=>{if(ready)injectJavascript(epubPageMotion);},[ready,settings.pageAnimation,injectJavascript]);
-  useEffect(()=>{if(ready)injectJavascript(`window.qrReader?.setReadingMode(${JSON.stringify(settings.readingMode==='scroll'?'scroll':'native')});window.qrInteractionBlocked=${Boolean(keysBlocked||bookmarksOpen||aiSelection||showContents)};true;`);},[ready,settings.readingMode,keysBlocked,bookmarksOpen,aiSelection,showContents,injectJavascript]);
-  const turn=(direction:number)=>{if(!ready||interaction.current||selectionActive||bookmarksOpen||keysBlocked||aiSelection||showContents)return;if(settings.readingMode!=='scroll'){stack.current?.turn(direction>0?1:-1);return;}injectJavascript('window.qrReader?.cancelPendingSelection();true;');void paper.turn(direction,()=>{if(direction>0)goNext({keepScrollOffset:true});else goPrevious({keepScrollOffset:true});});};
+  useEffect(()=>{if(ready)injectJavascript(`window.qrReader?.setReadingMode(${JSON.stringify(readingModeForBridge(settings.readingMode))});window.qrInteractionBlocked=${Boolean(keysBlocked||bookmarksOpen||aiSelection||showContents)};true;`);},[ready,settings.readingMode,keysBlocked,bookmarksOpen,aiSelection,showContents,injectJavascript]);
+  const turn=(direction:number)=>{if(!ready||interaction.current||selectionActive||bookmarksOpen||keysBlocked||aiSelection||showContents)return;if(settings.readingMode==='swipe'){stack.current?.turn(direction>0?1:-1);return;}injectJavascript('window.qrReader?.cancelPendingSelection();true;');void paper.turn(direction,()=>{if(direction>0)goNext({keepScrollOffset:true});else goPrevious({keepScrollOffset:true});});};
   const flow = settings.readingMode === 'scroll' ? 'scrolled-doc' : 'paginated';
+  const previousFlow=useRef(flow);
+  useEffect(()=>{
+    if(previousFlow.current===flow)return;
+    previousFlow.current=flow;
+    restored.current=false;
+    setReady(false);
+    setFailure('');
+  },[flow]);
   useEffect(()=>{if(ready)injectAll(`window.qrReader?.setMeaningsVisible(${meaningsVisible});true;`);},[ready,meaningsVisible,injectAll]);
   useEffect(()=>{if(ready)injectJavascript(`window.qrEpubParagraphs?.setVisible(${settings.paragraphTranslation});true;`);},[ready,settings.paragraphTranslation,injectJavascript]);
   const applyMarks=useCallback(()=>{injectAll(`${readingBridgeScript} rendition.getContents().forEach(function(content){window.qrReader.attach(content.document,'epub:'+content.sectionIndex);});window.qrReader.setMarks(${JSON.stringify(marks)});window.qrReader.setSentenceMarks(${JSON.stringify(sentenceMarks)});true;`);},[injectAll,marks,sentenceMarks]);
@@ -243,7 +252,7 @@ function EpubReaderSession({ preparedSource,onToggleChrome,chapterRequest,onChap
   useEffect(()=>{if(ready)injectAll(paintScript);},[ready,paintScript,injectAll]);
   if (!new File(uri).exists) return <View style={{ padding: 30, gap: 18 }}><Text style={{ color: colors.text }}>EPUB 文件缺失，请返回书架重新导入。</Text><Button label="返回书架" onPress={leave} /></View>;
   const renderPage=(slot:'previous'|'current'|'next')=>{
-    const document=pool[slot];if(!document||(settings.readingMode==='scroll'&&slot!=='current'))return null;
+    const document=pool[slot];if(!document||(!shouldPreloadEpubNeighbors(settings.readingMode)&&slot!=='current'))return null;
     const active=slot==='current';
     return <IsolatedEpubPage controllerRef={value=>{if(value)controllers.current.set(document.id,value);else controllers.current.delete(document.id);if(active)controller.current=value;}} runtimeId={runtimeId+'-'+document.id}
         key={document.id+flow} navigationRevision={document.revision??0}
@@ -256,7 +265,7 @@ function EpubReaderSession({ preparedSource,onToggleChrome,chapterRequest,onChap
         enableSwipe={false}
         enableSelection
         menuItems={selectionMenu}
-        injectedJavascript={paintScript+epubVisualPosition+epubPreviewBoot(document.direction,document.revision??0,document.visualAnchor)+`window.qrInteractionBlocked=false;window.qrSelectionGuard&&(window.qrSelectionGuard.locked=false);window.qrReadingMode=${JSON.stringify(settings.readingMode==='scroll'?'scroll':'native')};`+epubProgressBridge+readingBridgeScript+`if(!window.qrContentHook){window.qrContentHook=true;rendition.hooks.content.register(function(content){window.qrReader.attach(content.document,'epub:'+content.sectionIndex);});}rendition.getContents().forEach(function(content){window.qrReader.attach(content.document,'epub:'+content.sectionIndex);});true;`+epubParagraphBridge+`window.qrEpubParagraphs?.sync(${JSON.stringify(paragraphStates.current)});window.qrEpubParagraphs?.setVisible(${settings.paragraphTranslation});true;`+restoreEpubPosition(document.anchor,document.visualAnchor,settings.readingMode==='scroll'?'scroll':'paginated')}
+        injectedJavascript={paintScript+epubVisualPosition+epubPreviewBoot(document.direction,document.revision??0,document.visualAnchor)+`window.qrInteractionBlocked=false;window.qrSelectionGuard&&(window.qrSelectionGuard.locked=false);window.qrReadingMode=${JSON.stringify(readingModeForBridge(settings.readingMode))};`+epubProgressBridge+readingBridgeScript+`if(!window.qrContentHook){window.qrContentHook=true;rendition.hooks.content.register(function(content){window.qrReader.attach(content.document,'epub:'+content.sectionIndex);});}rendition.getContents().forEach(function(content){window.qrReader.attach(content.document,'epub:'+content.sectionIndex);});true;`+epubParagraphBridge+`window.qrEpubParagraphs?.sync(${JSON.stringify(paragraphStates.current)});window.qrEpubParagraphs?.setVisible(${settings.paragraphTranslation});true;`+restoreEpubPosition(document.anchor,document.visualAnchor,settings.readingMode==='scroll'?'scroll':'paginated')}
         onStarted={()=>{if(!active)return;traceReading('started',{bookId:book.id,cfi:lastLocation.current??undefined,mode:settings.readingMode});restored.current=false;setReady(false);setSelectionActive(false);setSelectedSentence(null);appliedTheme.current=initialTheme.current;}}
         onRendered={()=>{controllers.current.get(document.id)?.injectJavascript('window.qrDecoratePage?.();true;');}}
         onWebViewMessage={(event: unknown) => {
