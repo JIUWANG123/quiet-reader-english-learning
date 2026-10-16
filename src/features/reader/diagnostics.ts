@@ -2,6 +2,7 @@ import {File,Paths} from 'expo-file-system';
 import * as Sharing from 'expo-sharing';
 import Constants from 'expo-constants';
 import {Platform} from 'react-native';
+import {keepRecentAIDiagnostics,sanitizeAIDiagnosticError,type AIDiagnosticEvent} from '../../services/ai/diagnosticsModel';
 
 type Event='gesture-start'|'gesture-blocked'|'gesture-release'|'preview-request'|'preview-ready'|'preview-error'|'load'|'started'|'restore-ready'|'restore-error'|'progress'|'saved'|'save-error'|'journal-error';
 type Detail={bookId?:string;cfi?:string;target?:string;progress?:number;code?:string;mode?:string;direction?:number;requestId?:string;generation?:number;duration?:number;cacheHit?:boolean;lockReason?:string;isAnimating?:boolean;previewReady?:boolean};
@@ -10,6 +11,8 @@ function fingerprint(value:string){let h=2166136261;for(let i=0;i<value.length;i
 let events:object[]|undefined,timer:ReturnType<typeof setTimeout>|undefined;
 let lastKey='',lastTime=0;
 const logFile=()=>new File(Paths.document,'reader-diagnostics.json');
+const aiLogFile=()=>new File(Paths.document,'ai-diagnostics.json');
+let aiEvents:AIDiagnosticEvent[]|undefined;
 function read(){if(!events){try{const parsed=JSON.parse(logFile().textSync());events=Array.isArray(parsed)?parsed.slice(-200):[];}catch{events=[];}}return events!;}
 function persist(){if(timer)clearTimeout(timer);timer=undefined;try{logFile().write(JSON.stringify(read()));}catch{/* Diagnostics must never block reading. */}}
 export function traceReading(event:Event,detail:Detail={}){
@@ -36,6 +39,11 @@ export async function exportReadingDiagnostics(){
  persist();
  if(!await Sharing.isAvailableAsync())throw Error('此设备暂不支持文件分享。');
  const file=new File(Paths.cache,'QuietReader-diagnostics.json');
- file.write(JSON.stringify({version:Constants.expoConfig?.version,platform:Platform.OS,system:Platform.Version,events:read()},null,2));
+ file.write(JSON.stringify({version:Constants.expoConfig?.version,platform:Platform.OS,system:Platform.Version,events:read(),aiEvents:readAIDiagnostics()},null,2));
  await Sharing.shareAsync(file.uri,{mimeType:'application/json',UTI:'public.json',dialogTitle:'导出阅读诊断'});
 }
+
+function readAIDiagnostics(){if(!aiEvents){try{const parsed=JSON.parse(aiLogFile().textSync());aiEvents=Array.isArray(parsed)?keepRecentAIDiagnostics(parsed):[];}catch{aiEvents=[];}}return aiEvents;}
+export function recordAIDiagnostic(entry:AIDiagnosticEvent){try{const rows=readAIDiagnostics();if(entry.event==='progress'){const last=rows[rows.length-1];if(last?.event==='started'&&last.mode===entry.mode){rows[rows.length-1]={...last,stage:entry.stage,status:entry.status};}else rows.push({...entry});}else rows.push({...entry,error:entry.error?sanitizeAIDiagnosticError(entry.error):undefined});aiEvents=keepRecentAIDiagnostics(rows);aiLogFile().write(JSON.stringify(aiEvents));}catch{/* Diagnostics must never interrupt AI requests. */}}
+export function clearAIDiagnostics(){try{aiEvents=[];aiLogFile().write('[]');}catch{/* Best effort. */}}
+export function readAIDiagnosticEvents(){return readAIDiagnostics().slice();}

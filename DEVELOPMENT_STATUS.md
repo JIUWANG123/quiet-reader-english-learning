@@ -785,3 +785,11 @@
 - 修复上下滚动模式音量键翻页竞态；104 项自动测试、类型检查和浏览器手势专项通过。
 - APK v2 签名通过，证书与之前版本一致；SHA-256 9FD1F10B0E2645EBBB1AA8654CFE5189A90497B52A8FEEABF5403F923E8E2BB9。
 - GitHub Release：https://github.com/JIUWANG123/quiet-reader-english-learning/releases/tag/v1.11.8
+
+## 2026-10-16 · AI 请求分阶段诊断
+- AI 连接测试先检查 Android DNS、TCP 443 和 TLS，再请求模型；最近诊断及导出会保留各阶段状态和耗时。
+- 修正服务端错误脱敏，保留可操作的 HTTP 错误说明，同时隐藏凭证、请求 ID 和正文内容。
+- TypeScript 类型检查通过；Android Release 构建成功，arm64-v8a。
+- APK：QuietReader 1.11.11，versionCode 54，大小 78,145,818 字节，SHA-256 DA87DFB704CAB9DE57645280883B9D3A043CA82B753B94AC1ED6380491E452D。
+- APK v2 签名通过，证书 SHA-256 fac61745dc0903786fb9ede62a962b399f7348f0bb6f899b8332667591033b9c，与前版一致。尚未在用户手机上验收。
+- GitHub Release：https://github.com/JIUWANG123/quiet-reader-english-learning/releases/tag/v1.11.11
