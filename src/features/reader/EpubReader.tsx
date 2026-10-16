@@ -4,6 +4,7 @@ import {searchLocator} from './searchLocator';
 import {SentenceActions} from './SentenceActions';
 import {epubVisualPosition} from './epubVisualPosition';
 import {prepareEpubResources} from './epubResources';
+import {cancelEpubWarmup} from '../../services/books/warmup';
 import {NativePageStack,type PageStackHandle} from './NativePageStack';
 import {createEpubPool,readyEpubDocument,turnEpubPool,invalidateEpubNeighbors} from './epubPool';
 import {epubPreviewBoot} from './epubPreviewBoot';
@@ -117,6 +118,7 @@ function EpubReaderSession({ preparedSource,onToggleChrome,chapterRequest,onChap
   },[pool,book.id,settings.readingMode]);
   useEffect(()=>()=>{for(const job of previewJobs.current.values())clearTimeout(job.timer);previewJobs.current.clear();},[]);
   const activeId=useRef(pool.current.id);activeId.current=pool.current.id;
+  useEffect(()=>{cancelEpubWarmup();},[book.id]);
   const foreground=useRef(true);
   const heartbeat=useRef({sequence:0,acknowledged:0,lastPingAt:0,missed:0,reportedAt:0});
   useEffect(()=>{

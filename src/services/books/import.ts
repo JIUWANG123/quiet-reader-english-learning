@@ -77,7 +77,15 @@ export async function importBook(db: SQLiteDatabase) {
       try {
         for (let i = 0; i < pages.length; i++) await statement.executeAsync([id, i, pages[i].text, pages[i].heading]);
       } finally { await statement.finalizeAsync(); }
-      const frequencies=txtFrequency??epubIndex?.wordFrequency??{};for(const [lemma,count] of Object.entries(frequencies))await tx.runAsync('INSERT INTO book_word_frequency(book_id,lemma,occurrence_count) VALUES(?,?,?)',id,lemma,count);
+      const frequencies=Object.entries(txtFrequency??epubIndex?.wordFrequency??{});
+      // Keep the bind count below SQLite's historical 999 variable limit while
+      // reducing one prepare/execute/finalize bridge round-trip per word to one
+      // round-trip per chunk.
+      for(let start=0;start<frequencies.length;start+=200){
+        const chunk=frequencies.slice(start,start+200);
+        const values=chunk.map(()=>'(?,?,?)').join(',');
+        await tx.runAsync(`INSERT INTO book_word_frequency(book_id,lemma,occurrence_count) VALUES ${values}`,...chunk.flatMap(([lemma,count])=>[id,lemma,count]));
+      }
     });
     mark('import-stage',stage,{duration:Date.now()-started,result:'success'});
     if (format === 'epub') {

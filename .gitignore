@@ -46,6 +46,13 @@ yarn-error.*
 /ios
 /android
 
+# native module build output (regenerated on demand)
+modules/*/android/build/
+modules/*/android/.gradle/
+
+# editor
+.idea/
+
 # Local build output and credentials
 *.log
 *.apk

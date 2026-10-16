@@ -5,6 +5,7 @@ import {Gesture,GestureDetector} from 'react-native-gesture-handler';
 import Animated,{cancelAnimation,runOnJS,runOnUI,useAnimatedStyle,useSharedValue,withTiming} from 'react-native-reanimated';
 import type {SharedValue} from 'react-native-reanimated';
 import {pageTurnDecision} from './pageTurnDecision';
+import {pagePositionsFor,pageSlotsFor} from './pageStack';
 
 export type PageDirection=1|-1;
 export type PageStackHandle={setReadiness:(source:string,previous:boolean,next:boolean)=>void;turn:(direction:PageDirection)=>boolean};
@@ -38,7 +39,7 @@ export function NativePageStack({onDiagnostic,onBoundary,controllerRef,animate=t
    // Stable document keys read one shared position map. Updating slot styles in
    // React separately from resetting the UI-thread offset exposed the old offset
    // for a frame after promotion. Commit both coordinates in one UI worklet.
-   const nextPositions={[ids.previous]:-width,[ids.current]:0,[ids.next]:width};
+   const nextPositions=pagePositionsFor(ids,width);
    const old=committedLayout.current;
    const reset=old.pageKey!==pageKey||old.width!==width||old.height!==height;
    committedLayout.current={pageKey,width,height};
@@ -87,9 +88,13 @@ export function NativePageStack({onDiagnostic,onBoundary,controllerRef,animate=t
    const token=++epoch.value;dragging.value=false;busy.value=true;runOnJS(settle)(token);
    offset.value=withTiming(0,{duration:180},()=>{if(epoch.value!==token)return;busy.value=false;runOnJS(notify)(false);});
   }),[enabled,width,height,availability,commit,boundary,notify,offset,busy,dragging,settle,diagnostic,epoch,pageKey]);
- return <GestureDetector gesture={pan}><View onLayout={e=>{const {width,height}=e.nativeEvent.layout;setLayout(old=>old.width===width&&old.height===height?old:{width,height});}} style={[styles.viewport,widthProp===undefined?null:{width:widthProp},heightProp===undefined?null:{height:heightProp}]}>
-  {(['previous','current','next'] as const).slice().sort((a,b)=>ids[a].localeCompare(ids[b])).map(slot=><PageSurface key={ids[slot]} id={ids[slot]} positions={positions} offset={offset} width={width} height={height} pointerEvents={slot==='current'?'auto':'none'} accessibilityElementsHidden={slot!=='current'} importantForAccessibility={slot==='current'?'auto':'no-hide-descendants'}>{renderPage(slot)}</PageSurface>)}
- </View></GestureDetector>;
+  // The React key must be unique for every child. A slot whose neighbour sits in
+  // the same document as the current one collapses onto the same page id, so keys
+  // are slot-qualified and an id claimed by two slots is mounted only once.
+  const surfaces=pageSlotsFor(ids).map(slot=><PageSurface key={slot+':'+ids[slot]} id={ids[slot]} positions={positions} offset={offset} width={width} height={height} pointerEvents={slot==='current'?'auto':'none'} accessibilityElementsHidden={slot!=='current'} importantForAccessibility={slot==='current'?'auto':'no-hide-descendants'}>{renderPage(slot)}</PageSurface>);
+  return <GestureDetector gesture={pan}><View onLayout={e=>{const {width,height}=e.nativeEvent.layout;setLayout(old=>old.width===width&&old.height===height?old:{width,height});}} style={[styles.viewport,widthProp===undefined?null:{width:widthProp},heightProp===undefined?null:{height:heightProp}]}>
+   {surfaces}
+  </View></GestureDetector>;
 }
 const styles=StyleSheet.create({viewport:{flex:1,overflow:'hidden',backgroundColor:'transparent'},page:{position:'absolute',left:0,top:0,backgroundColor:'transparent'}});
 

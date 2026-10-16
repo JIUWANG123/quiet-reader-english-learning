@@ -8,3 +8,25 @@ export function makePageStack(rows:BookPage[],index:number):PageStack {
 export function rotatePageStack(stack:PageStack,direction:1|-1,loaded:BookPage|null):PageStack {
   return direction===1?{previous:stack.current,current:stack.next,next:loaded}:{previous:loaded,current:stack.previous,next:stack.current};
 }
+export type PageSlot='previous'|'current'|'next';
+/** Which surfaces to mount for a slot-to-document id map.
+ * Two slots sharing one document must mount a single surface: at boot every slot
+ * resolves to the same page, and duplicate React keys break child identity.
+ * The current slot always wins a shared id, otherwise the visible page would not
+ * render at all. Ordering by the rendered key keeps surfaces stable across rotation. */
+export function pageSlotsFor(ids:Record<PageSlot,string>):PageSlot[]{
+ const claimed=new Map<string,PageSlot>();
+ for(const slot of ['current','previous','next'] as const){
+  if(!claimed.has(ids[slot]))claimed.set(ids[slot],slot);
+ }
+ const key=(slot:PageSlot)=>slot+':'+ids[slot];
+ return [...claimed.values()].sort((a,b)=>key(a)<key(b)?-1:key(a)>key(b)?1:0);
+}
+
+/** Build positions from the unique mounted slots so a shared current/neighbor
+ * id can never have its visible position overwritten by a later object field. */
+export function pagePositionsFor(ids:Record<PageSlot,string>,width:number):Record<string,number>{
+ const positions:Record<string,number>={};
+ for(const slot of pageSlotsFor(ids))positions[ids[slot]]=slot==='previous'?-width:slot==='next'?width:0;
+ return positions;
+}

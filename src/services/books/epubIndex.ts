@@ -65,6 +65,7 @@ export async function buildEpubIndex(file:File,cacheDir?:{file:(name:string)=>Fi
   const id=item.attribs.id,href=item.attribs.href;
   if(id&&href)manifest.set(id,{href:resolveHref(href,base),mediaType:item.attribs['media-type']??'',properties:item.attribs.properties??''});
  }
+ const spine=elements(document,'spine')[0];
  const isContent=(item:{href:string;mediaType:string})=>item.mediaType
   ? /(?:application\/xhtml\+xml|text\/html)/i.test(item.mediaType)
   : /\.x?html?$/i.test(item.href);
@@ -83,6 +84,26 @@ export async function buildEpubIndex(file:File,cacheDir?:{file:(name:string)=>Fi
  };
 
  let order=resolveEntries(spineOrder);
+ const dirname=(path:string)=>{const index=path.lastIndexOf('/');return index<0?'':path.slice(0,index+1);};
+ const tocRef=spine?.attribs.toc;
+ const tocHref=tocRef?(manifest.get(tocRef)?.href??resolveHref(tocRef,base)):undefined;
+ if(!order.length&&tocHref){
+  const ncx=await read(tocHref);
+  if(ncx){
+   const ncxDocument=parseDocument(ncx,{xmlMode:true,decodeEntities:true});
+   const hrefs=elements(ncxDocument,'content').map(item=>item.attribs.src).filter((href):href is string=>Boolean(href)).map(href=>resolveHref(href,dirname(tocHref)));
+   order=resolveEntries(hrefs);
+  }
+ }
+ const navItem=[...manifest.values()].find(item=>item.properties.split(/\s+/).includes('nav'));
+ if(!order.length&&navItem){
+  const nav=await read(navItem.href);
+  if(nav){
+   const navDocument=parseDocument(nav,{xmlMode:true,decodeEntities:true});
+   const hrefs=elements(navDocument,'a').map(item=>item.attribs.href).filter((href):href is string=>Boolean(href)&&/\.x?html?(?:[?#].*)?$/i.test(href)).map(href=>resolveHref(href,dirname(navItem.href)));
+   order=resolveEntries(hrefs);
+  }
+ }
  // Some publishers ship a damaged or empty spine. Keep import usable by falling
  // back to the manifest order, then to packaged XHTML names as a last resort.
  if(!order.length)order=resolveEntries(content.map(item=>item.href));

@@ -21,10 +21,14 @@ async function prepare(source:string){
  try{if(marker.exists){const saved=JSON.parse(await marker.text());const opf=new File(root,...safeParts(saved.opf));if(saved.fingerprint===fingerprint&&opf.exists&&Array.isArray(saved.files)&&saved.files.length&&saved.files.every((entry:{path:string;size:number})=>{const file=new File(root,...safeParts(entry.path));return file.exists&&file.size===entry.size;}))return opf.uri;}}catch{/* An interrupted cache is rebuilt from the original archive. */}
  root.create({intermediates:true,idempotent:true});
  const zip=await JSZip.loadAsync(await archive.arrayBuffer());
- const container=await zip.file('META-INF/container.xml')?.async('string');
+ // The spec mandates this exact casing, but archives in the wild disagree.
+ const containerEntry=zip.file('META-INF/container.xml')??Object.values(zip.files).find(entry=>!entry.dir&&entry.name.toLowerCase()==='meta-inf/container.xml');
+ const container=await containerEntry?.async('string');
  const opfPath=container?.match(/<rootfile\b[^>]*\bfull-path\s*=\s*["']([^"']+)["']/i)?.[1]?.replace(/&amp;/g,'&');
- if(!opfPath||!zip.file(opfPath))throw Error('EPUB 缺少有效目录');
- safeParts(opfPath);
+ const opfEntry=opfPath?(zip.file(opfPath)??Object.values(zip.files).find(entry=>!entry.dir&&entry.name.toLowerCase()===opfPath.toLowerCase())):undefined;
+ if(!opfPath||!opfEntry)throw Error('EPUB 缺少有效目录');
+ const actualOpfPath=opfEntry.name;
+ safeParts(actualOpfPath);
  const files:{path:string;size:number}[]=[];
  let total=0;
  for(const entry of Object.values(zip.files)){
@@ -39,6 +43,6 @@ async function prepare(source:string){
   files.push({path:entry.name,size:data.byteLength});
  }
  // Commit last: a killed app cannot mistake a partial extraction for a cache hit.
- marker.write(JSON.stringify({fingerprint,opf:opfPath,files}));
- return new File(root,...safeParts(opfPath)).uri;
+ marker.write(JSON.stringify({fingerprint,opf:actualOpfPath,files}));
+ return new File(root,...safeParts(actualOpfPath)).uri;
 }
