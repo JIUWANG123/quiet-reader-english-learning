@@ -816,3 +816,12 @@
 - TypeScript 类型检查通过，109 项测试通过；Android Release 构建成功，arm64-v8a。
 - APK：QuietReader 1.11.13，versionCode 56，大小 78,155,602 字节，SHA-256 D6576BD2A6D24B3D1FC62A38C38E34D8D3B703B16C58137DE568101143505CEC。
 - APK v2 签名通过，证书 SHA-256 fac61745dc0903786fb9ede62a962b399f7348f0bb6f899b8332667591033b9c，与前版一致。
+
+## 2026-10-16 · 合并社区 EPUB 修复与导入优化
+- 合并社区 PR #1 的 EPUB 2 NCX 阅读顺序回退、EPUB 资源大小写回退、导入词频批量写入、ASCII 词频统计优化、后台预热取消和 TXT 页面槽位修复。
+- 合并审查中修正页面槽位共享 ID 时位置图覆盖当前页的边界问题，并补了首屏/末屏位置测试。保留现有 EPUB 属性顺序解析、索引失败导入回退、默认滚动及结构化诊断；移除 PR 中含文件名/原始异常文本的 Logcat 导入日志。
+- TypeScript 类型检查通过，126 项测试通过；Android Release 构建成功，arm64-v8a。未在用户设备实测长书导入/翻页。
+- APK：QuietReader 1.11.14，versionCode 57，大小 78,159,022 字节，SHA-256 6788951B1983C091DF5F39AB7E49AC9CC1D60F396EF536EC76008683F061AC3F。
+- APK v2 签名通过，证书 SHA-256 fac61745dc0903786fb9ede62a962b399f7348f0bb6f899b8332667591033b9c，与前版一致。
+- 合并来源：https://github.com/JIUWANG123/quiet-reader-english-learning/pull/1
+- GitHub Release：https://github.com/JIUWANG123/quiet-reader-english-learning/releases/tag/v1.11.14
