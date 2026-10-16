@@ -27,7 +27,16 @@ export async function importBook(db: SQLiteDatabase) {
     directory.create({ intermediates: true, idempotent: true });
     if(format==='epub') {
       const chapterDir=new Directory(directory,`${id}.chapters`); chapterDir.create({intermediates:true,idempotent:true});
-      epubIndex=await buildEpubIndex(source,{file:name=>new File(chapterDir,name)});
+      try {
+        epubIndex=await buildEpubIndex(source,{file:name=>new File(chapterDir,name)});
+      } catch(error) {
+        // The index only supports word-frequency and warmup extras. epub.js
+        // reads the original archive, so an indexing edge case must not reject
+        // an otherwise importable EPUB or leave an index from an older copy.
+        try { if(chapterDir.exists)chapterDir.delete(); } catch { /* Cache cleanup is best effort. */ }
+        try { const oldIndex=new File(directory,`${id}.epub-index.json`);if(oldIndex.exists)oldIndex.delete(); } catch { /* Cache cleanup is best effort. */ }
+        console.warn('EPUB auxiliary index skipped; continuing with the original book.',error instanceof Error?error.message:String(error));
+      }
     }
     destination = new File(directory, `${id}.${format}`);
     if(existing?.file_name && existing.file_name!==destination.name){const old=new File(directory,existing.file_name);if(old.exists)old.delete();}

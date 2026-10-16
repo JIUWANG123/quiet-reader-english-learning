@@ -793,3 +793,11 @@
 - APK：QuietReader 1.11.11，versionCode 54，大小 78,145,818 字节，SHA-256 DA87DFB704CAB9DE57645280883B9D3A043CA82B753B94AC1ED6380491E452D。
 - APK v2 签名通过，证书 SHA-256 fac61745dc0903786fb9ede62a962b399f7348f0bb6f899b8332667591033b9c，与前版一致。尚未在用户手机上验收。
 - GitHub Release：https://github.com/JIUWANG123/quiet-reader-english-learning/releases/tag/v1.11.11
+
+## 2026-10-16 · EPUB 导入解析与默认阅读模式
+- EPUB OPF 清单改为按 XML 属性名解析，兼容属性顺序反转、大小写路径和编码相对路径；损坏或非标准辅助索引不再阻断原书导入，并清理旧索引缓存。
+- 无有效保存设置时，默认阅读模式改为上下滚动；已保存的 swipe/tap/scroll 偏好保留。
+- TypeScript 类型检查通过；Android Release 构建成功，arm64-v8a。尚未在真机验收 EPUB 样本。
+- APK：QuietReader 1.11.12，versionCode 55，大小 78,150,010 字节，SHA-256 15F7E7043A2FED8CBE807B24C6071B36CF4193884BCD01AA7222872719F7DDFA。
+- APK v2 签名通过，证书 SHA-256 fac61745dc0903786fb9ede62a962b399f7348f0bb6f899b8332667591033b9c，与前版一致。
+- GitHub Release：https://github.com/JIUWANG123/quiet-reader-english-learning/releases/tag/v1.11.12

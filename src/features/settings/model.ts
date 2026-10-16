@@ -1,6 +1,6 @@
 import type { ReaderSettings } from '../../types';
 import { clamp } from '../../services/books/text';
-export const defaults: ReaderSettings = { theme: 'paper', fontSize: 21, lineHeight: 1.7, margin: 26, readingMode: 'swipe', pageAnimation: true, volumePageTurn: false, paragraphTranslation: false };
+export const defaults: ReaderSettings = { theme: 'paper', fontSize: 21, lineHeight: 1.7, margin: 26, readingMode: 'scroll', pageAnimation: true, volumePageTurn: false, paragraphTranslation: false };
 export function parseSettings(raw?: string): ReaderSettings {
   try {
     const value = JSON.parse(raw ?? '{}');
