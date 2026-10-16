@@ -12,6 +12,7 @@ import { Button, styles } from '../../components/ui';
 import { listBooks, removeBooks } from '../../services/books/repository';
 import { cleanDeletedBookFiles } from '../../services/books/cleanup';
 import { addSample, importBook } from '../../services/books/import';
+import {traceReading} from '../reader/diagnostics';
 import type { Book } from '../../types';
 
 export default function LibraryScreen() {
@@ -58,7 +59,7 @@ export default function LibraryScreen() {
     setBusy(true);
     try {
       const imported = await importBook(db);
-      await refresh();
+      try{await refresh();}catch(error){traceReading('library-refresh-failure',{code:'BOOK_LIST_REFRESH'});throw error;}
       if (imported?.format === 'epub') Alert.alert('导入成功', 'EPUB 已保存，可以开始阅读。首次打开大文件可能需要稍等。');
     } catch (e) { Alert.alert('未能导入', e instanceof Error ? e.message : '请检查文件和剩余存储空间后重试。'); }
     finally { setBusy(false); }

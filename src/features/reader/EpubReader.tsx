@@ -18,7 +18,7 @@ import type {ChapterText} from '../ai/ChapterTranslation';
 import {useVolumePageTurn} from './useVolumePageTurn';
 import {volumeKeysEnabledForReadingMode} from './volumePolicy';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, Alert, FlatList, Modal, ScrollView, Text, View, useWindowDimensions } from 'react-native';
+import { ActivityIndicator, Alert, AppState, FlatList, Modal, ScrollView, Text, View, useWindowDimensions } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Directory, File, Paths } from 'expo-file-system';
 import { type Location, type Section, type Toc } from '@epubjs-react-native/core';
@@ -117,6 +117,32 @@ function EpubReaderSession({ preparedSource,onToggleChrome,chapterRequest,onChap
   },[pool,book.id,settings.readingMode]);
   useEffect(()=>()=>{for(const job of previewJobs.current.values())clearTimeout(job.timer);previewJobs.current.clear();},[]);
   const activeId=useRef(pool.current.id);activeId.current=pool.current.id;
+  const foreground=useRef(true);
+  const heartbeat=useRef({sequence:0,acknowledged:0,lastPingAt:0,missed:0,reportedAt:0});
+  useEffect(()=>{
+    const subscription=AppState.addEventListener('change',state=>{
+      foreground.current=state==='active';
+      if(foreground.current){const state=heartbeat.current;state.acknowledged=state.sequence;state.lastPingAt=Date.now();state.missed=0;state.reportedAt=0;}
+    });
+    return ()=>subscription.remove();
+  },[]);
+  useEffect(()=>{
+    if(!ready)return;
+    const timer=setInterval(()=>{
+      if(!foreground.current||!controller.current)return;
+      const state=heartbeat.current,now=Date.now();
+      if(state.sequence>0&&state.acknowledged<state.sequence&&now-state.lastPingAt>=5000){
+        state.missed++;
+        if(state.missed>=3&&state.reportedAt===0){
+          state.reportedAt=now;
+          traceReading('webview-unresponsive',{bookId:book.id,code:'NO_DIAGNOSTIC_PONG',mode:settings.readingMode,duration:now-state.lastPingAt});
+        }
+      }else if(state.acknowledged>=state.sequence)state.missed=0;
+      state.sequence++;state.lastPingAt=now;
+      try{controller.current.injectJavascript(`window.ReactNativeWebView.postMessage(JSON.stringify({type:'qr-diagnostic-pong',sequence:${state.sequence}}));true;`);}catch{/* A replaced WebView may reject a probe while switching pages. */}
+    },5000);
+    return ()=>clearInterval(timer);
+  },[ready,book.id,settings.readingMode]);
   const [runtimeId]=useState(()=>`reader-${Date.now()}-${Math.random().toString(36).slice(2)}`);
   const injectJavascript=useCallback((script:string)=>controller.current?.injectJavascript(script),[]);
   const injectAll=useCallback((script:string)=>controllers.current.forEach(page=>page.injectJavascript(script)),[]);
@@ -232,9 +258,17 @@ function EpubReaderSession({ preparedSource,onToggleChrome,chapterRequest,onChap
         onStarted={()=>{if(!active)return;traceReading('started',{bookId:book.id,cfi:lastLocation.current??undefined,mode:settings.readingMode});restored.current=false;setReady(false);setSelectionActive(false);setSelectedSentence(null);appliedTheme.current=initialTheme.current;}}
         onRendered={()=>{controllers.current.get(document.id)?.injectJavascript('window.qrDecoratePage?.();true;');}}
         onWebViewMessage={(event: unknown) => {
-          const data = event as AIRequest & {type?: string; location?: Location; code?: string;revision?:number};
+          const data = event as AIRequest & {type?: string; location?: Location; code?: string;revision?:number;sequence?:number};
           const live=([poolRef.current.current,poolRef.current.previous,poolRef.current.next]).find(item=>item?.id===document.id);
           if(!live||(data?.revision!==undefined&&data.revision!==(live.revision??0)))return;
+          if(data.type==='qr-diagnostic-pong'){
+            if(document.id===activeId.current&&Number.isSafeInteger(data.sequence)){
+              const state=heartbeat.current;state.acknowledged=Math.max(state.acknowledged,data.sequence!);
+              if(state.reportedAt){traceReading('webview-responsive',{bookId:book.id,mode:settings.readingMode,duration:Date.now()-state.reportedAt});state.reportedAt=0;}
+              state.missed=0;
+            }
+            return;
+          }
           if((data?.type==='qr-preview-ready'||data?.type==='qr-position-ready')&&data.location?.start?.cfi){
             // Prepare annotations and paragraph controls before exposing a page.
             // Promotion must only change ownership, never redraw visible content.

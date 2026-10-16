@@ -4,8 +4,8 @@ import Constants from 'expo-constants';
 import {Platform} from 'react-native';
 import {keepRecentAIDiagnostics,sanitizeAIDiagnosticError,type AIDiagnosticEvent} from '../../services/ai/diagnosticsModel';
 
-type Event='gesture-start'|'gesture-blocked'|'gesture-release'|'preview-request'|'preview-ready'|'preview-error'|'load'|'started'|'restore-ready'|'restore-error'|'progress'|'saved'|'save-error'|'journal-error';
-type Detail={bookId?:string;cfi?:string;target?:string;progress?:number;code?:string;mode?:string;direction?:number;requestId?:string;generation?:number;duration?:number;cacheHit?:boolean;lockReason?:string;isAnimating?:boolean;previewReady?:boolean};
+type Event='gesture-start'|'gesture-blocked'|'gesture-release'|'preview-request'|'preview-ready'|'preview-error'|'load'|'started'|'restore-ready'|'restore-error'|'progress'|'saved'|'save-error'|'journal-error'|'import-start'|'import-picker-done'|'import-stage'|'import-index-failure'|'import-failure'|'import-complete'|'webview-unresponsive'|'webview-responsive'|'library-refresh-failure'|'app-error';
+type Detail={bookId?:string;cfi?:string;target?:string;progress?:number;code?:string;mode?:string;direction?:number;requestId?:string;generation?:number;duration?:number;cacheHit?:boolean;lockReason?:string;isAnimating?:boolean;previewReady?:boolean;stage?:string;format?:'epub'|'txt';sizeBucket?:'lt1mb'|'1to10mb'|'10to50mb'|'50to128mb'|'over128mb';result?:'success'|'failure'|'cancelled'};
 // Compare positions without exporting EPUB IDs or text.
 function fingerprint(value:string){let h=2166136261;for(let i=0;i<value.length;i++)h=Math.imul(h^value.charCodeAt(i),16777619);return (h>>>0).toString(16);}
 let events:object[]|undefined,timer:ReturnType<typeof setTimeout>|undefined;
@@ -29,17 +29,23 @@ export function traceReading(event:Event,detail:Detail={}){
    duration:Number.isFinite(detail.duration)?Math.round(detail.duration!):undefined,
    cacheHit:detail.cacheHit,isAnimating:detail.isAnimating,previewReady:detail.previewReady,
    lockReason:['ANIMATING','PREVIEW_PENDING','BOUNDARY','CANCELLED','TIMEOUT'].includes(detail.lockReason??'')?detail.lockReason:undefined,
-   code:detail.code&&/^[A-Z_]{1,40}$/.test(detail.code)?detail.code:undefined,
-   mode:['swipe','tap','scroll'].includes(detail.mode??'')?detail.mode:undefined});
-  if(rows.length>200)rows.splice(0,rows.length-200);
-  if(event.endsWith('error'))persist();else if(!timer)timer=setTimeout(persist,2000);
+   code:detail.code&&/^[A-Z0-9_]{1,48}$/.test(detail.code)?detail.code:undefined,
+   mode:['swipe','tap','scroll','epub','txt','import'].includes(detail.mode??'')?detail.mode:undefined,
+   stage:detail.stage&&/^[a-z0-9_-]{1,48}$/.test(detail.stage)?detail.stage:undefined,
+   format:['epub','txt'].includes(detail.format??'')?detail.format:undefined,
+   sizeBucket:['lt1mb','1to10mb','10to50mb','50to128mb','over128mb'].includes(detail.sizeBucket??'')?detail.sizeBucket:undefined,
+   result:['success','failure','cancelled'].includes(detail.result??'')?detail.result:undefined});
+  if(rows.length>400)rows.splice(0,rows.length-400);
+  if(event.endsWith('error')||event.endsWith('failure')||event.startsWith('import-')||event==='webview-unresponsive'||event==='app-error')persist();else if(!timer)timer=setTimeout(persist,2000);
  }catch{/* Logging is best effort. */}
 }
 export async function exportReadingDiagnostics(){
  persist();
  if(!await Sharing.isAvailableAsync())throw Error('此设备暂不支持文件分享。');
  const file=new File(Paths.cache,'QuietReader-diagnostics.json');
- file.write(JSON.stringify({version:Constants.expoConfig?.version,platform:Platform.OS,system:Platform.Version,events:read(),aiEvents:readAIDiagnostics()},null,2));
+ const aiEvents=readAIDiagnostics();
+ const timeline=[...read(),...aiEvents.map(item=>({time:item.time,version:Constants.expoConfig?.version,event:`ai-${item.event}`,mode:item.mode,stage:item.stage,duration:item.duration,status:item.status,error:item.error,cached:item.cached}))].sort((a,b)=>(a as {time:number}).time-(b as {time:number}).time).slice(-500);
+ file.write(JSON.stringify({version:Constants.expoConfig?.version,platform:Platform.OS,system:Platform.Version,events:timeline,aiEvents},null,2));
  await Sharing.shareAsync(file.uri,{mimeType:'application/json',UTI:'public.json',dialogTitle:'导出阅读诊断'});
 }
 

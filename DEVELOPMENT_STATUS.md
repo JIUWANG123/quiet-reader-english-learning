@@ -801,3 +801,18 @@
 - APK：QuietReader 1.11.12，versionCode 55，大小 78,150,010 字节，SHA-256 15F7E7043A2FED8CBE807B24C6071B36CF4193884BCD01AA7222872719F7DDFA。
 - APK v2 签名通过，证书 SHA-256 fac61745dc0903786fb9ede62a962b399f7348f0bb6f899b8332667591033b9c，与前版一致。
 - GitHub Release：https://github.com/JIUWANG123/quiet-reader-english-learning/releases/tag/v1.11.12
+
+## 2026-10-16 · 导入与 WebView 诊断扩展
+- 导出阅读诊断扩展为最近 400 条阅读/导入/运行状态，并与最近 50 条 AI 阶段记录按时间合并成 timeline；原 aiEvents 字段仍保留兼容。
+- EPUB/TXT 导入记录安全阶段、耗时、格式/大小区间和错误类别；不记录文件名、路径或正文。辅助索引失败与整书导入失败可区分。
+- EPUB 当前 WebView 增加低频 ping/pong；连续无响应会记录 WEBVIEW_NO_PONG，恢复会记录响应耗时。React 错误边界记录固定错误码。
+- 类型检查通过，109 项测试通过；Android Release 构建待完成。
+
+## 2026-10-16 · 诊断时间线扩展
+- 导入日志覆盖选择器、格式与大小区间、文本解析、EPUB 辅助索引、文件复制、数据库事务、完成/失败；错误只保存固定类别，不保留原始错误文本。
+- 阅读诊断最近 400 条；导出时与最近 50 条 AI 阶段记录按时间组成 events 时间线，保留 aiEvents 兼容字段。
+- EPUB WebView 以 5 秒间隔 ping，连续无响应记录 WEBVIEW_NO_PONG，恢复记录 webview-responsive；不响应本身不代表已确认系统 renderer crash。
+- React 错误边界记录固定错误码。诊断不包含文件名、路径、正文或 API Key；无法自动捕获进程被系统直接杀死、所有原生崩溃或所有业务错误。
+- TypeScript 类型检查通过，109 项测试通过；Android Release 构建成功，arm64-v8a。
+- APK：QuietReader 1.11.13，versionCode 56，大小 78,155,602 字节，SHA-256 D6576BD2A6D24B3D1FC62A38C38E34D8D3B703B16C58137DE568101143505CEC。
+- APK v2 签名通过，证书 SHA-256 fac61745dc0903786fb9ede62a962b399f7348f0bb6f899b8332667591033b9c，与前版一致。

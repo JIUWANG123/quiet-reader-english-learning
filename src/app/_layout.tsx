@@ -11,10 +11,12 @@ import { initializeDatabase } from '../db';
 import { SettingsProvider, useSettings } from '../features/settings/SettingsProvider';
 import { DictionaryContextProvider } from '../features/dictionary/DictionaryContext';
 import { EpubWarmupHost } from '../features/reader/EpubWarmupHost';
+import {traceReading} from '../features/reader/diagnostics';
 
 class StorageBoundary extends Component<PropsWithChildren, { failed: boolean }> {
   state = { failed: false };
   static getDerivedStateFromError() { return { failed: true }; }
+  componentDidCatch() { traceReading('app-error',{code:'REACT_RENDER_BOUNDARY'}); }
   render() {
     if (this.state.failed) return <View style={{ flex: 1, padding: 30, justifyContent: 'center', backgroundColor: '#F7F2E8' }}><Text>本地存储未能打开。请关闭 App 后重试，并检查手机存储空间。请勿卸载，以免丢失本地书籍。</Text></View>;
     return this.props.children;
