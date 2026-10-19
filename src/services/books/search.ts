@@ -1,16 +1,15 @@
-import {File,Paths} from 'expo-file-system';
+import {Directory,File,Paths} from 'expo-file-system';
 import {openDatabaseAsync} from 'expo-sqlite';
 import type {SQLiteDatabase} from 'expo-sqlite';
 import type {Book} from '../../types';
-import {prepareEpubResources} from '../../features/reader/epubResources';
-import {parseDocument,DomUtils} from 'htmlparser2';
+import {buildEpubIndex,type EpubIndex} from './epubIndex';
 import {epubSearchText,searchMatches} from './searchText';
 
-export type SearchHit={section:number;offset:number;text:string;before:string;after:string;title:string};
+export type SearchHit={section:number;href?:string;offset:number;text:string;before:string;after:string;title:string};
 let connection:ReturnType<typeof openDatabaseAsync>|undefined;
 async function database(){
- const db=await(connection??=openDatabaseAsync('search.db'));
- await db.execAsync(`CREATE VIRTUAL TABLE IF NOT EXISTS passages USING fts5(book UNINDEXED,section UNINDEXED,title UNINDEXED,body,tokenize='unicode61');CREATE TABLE IF NOT EXISTS indexed_books(book TEXT PRIMARY KEY,fingerprint TEXT);CREATE TABLE IF NOT EXISTS indexed_sections(book TEXT,section INTEGER,fingerprint TEXT,PRIMARY KEY(book,section));`);
+ const db=await(connection??=openDatabaseAsync('search-v2.db'));
+ await db.execAsync(`CREATE VIRTUAL TABLE IF NOT EXISTS passages USING fts5(book UNINDEXED,section UNINDEXED,href UNINDEXED,title UNINDEXED,body,tokenize='unicode61');CREATE TABLE IF NOT EXISTS indexed_books(book TEXT PRIMARY KEY,fingerprint TEXT);CREATE TABLE IF NOT EXISTS indexed_sections(book TEXT,section INTEGER,fingerprint TEXT,PRIMARY KEY(book,section));`);
  return db;
 }
 export async function indexBook(app:SQLiteDatabase,book:Book,signal:AbortSignal,progress:(done:number,total:number)=>void){
@@ -19,13 +18,21 @@ export async function indexBook(app:SQLiteDatabase,book:Book,signal:AbortSignal,
  // Completed indexes bypass EPUB extraction and chapter enumeration.
  const complete=await db.getFirstAsync<{fingerprint:string}>('SELECT fingerprint FROM indexed_books WHERE book=?',book.id);
  if(complete?.fingerprint===fingerprint)return;
- let chapters:{section:number;title:string;uri?:string}[];
+ let chapters:{section:number;title:string;href?:string;uri?:string}[];
  if(book.format==='txt')chapters=(await app.getAllAsync<{page_index:number;heading:string}>('SELECT page_index,heading FROM book_pages WHERE book_id=? ORDER BY page_index',book.id)).map(row=>({section:row.page_index,title:row.heading||`第 ${row.page_index+1} 段`}));
  else {
   if(!file)throw Error('原始 EPUB 不存在');
-  const opf=await prepareEpubResources(file.uri),document=parseDocument(await new File(opf).text(),{xmlMode:true});
-  const elements=DomUtils.findAll(()=>true,document.children),items=new Map(elements.filter(node=>node.name==='item').map(node=>[node.attribs.id,node.attribs.href]));
-  chapters=elements.filter(node=>node.name==='itemref').map((node,section)=>{const href=items.get(node.attribs.idref);if(!href)throw Error('章节索引不完整');const uri=new URL(href,opf).href;if(!uri.startsWith(opf.slice(0,opf.lastIndexOf('/')+1)))throw Error('章节路径不受支持');return {section,title:`第 ${section+1} 章`,uri};});
+  const chapterDir=new Directory(Paths.document,'books',`${book.id}.chapters`),indexFile=new File(Paths.document,'books',`${book.id}.epub-index.json`);
+  let index:EpubIndex|undefined;
+  if(indexFile.exists){
+   try{const saved=JSON.parse(await indexFile.text()) as EpubIndex;if(Array.isArray(saved.chapters)&&saved.chapters.length&&saved.chapters.every(chapter=>new File(chapterDir,`${chapter.index}.xhtml`).exists))index=saved;}catch{}
+  }
+  if(!index){
+   chapterDir.create({intermediates:true,idempotent:true});
+   index=await buildEpubIndex(file,{file:name=>new File(chapterDir,name)});
+   try{indexFile.write(JSON.stringify(index));}catch{}
+  }
+  chapters=index.chapters.map(chapter=>({section:chapter.index,title:chapter.title,href:chapter.href,uri:new File(chapterDir,`${chapter.index}.xhtml`).uri}));
  }
  // The index is durable in search.db. When the source fingerprint and section
  // count still match, avoid deleting/rechecking every row on each reader open.
@@ -49,7 +56,7 @@ export async function indexBook(app:SQLiteDatabase,book:Book,signal:AbortSignal,
    if(signal.aborted)return;
    await db.withTransactionAsync(async()=>{
     await db.runAsync('DELETE FROM passages WHERE book=? AND section=?',book.id,chapter.section);
-    await db.runAsync('INSERT INTO passages(book,section,title,body) VALUES(?,?,?,?)',book.id,chapter.section,chapter.title,text);
+    await db.runAsync('INSERT INTO passages(book,section,href,title,body) VALUES(?,?,?,?,?)',book.id,chapter.section,chapter.href??null,chapter.title,text);
     await db.runAsync('INSERT OR REPLACE INTO indexed_sections VALUES(?,?,?)',book.id,chapter.section,fingerprint);
    });
    done++;progress(done,chapters.length);await new Promise(resolve=>setTimeout(resolve,0));
@@ -82,11 +89,11 @@ export async function searchBook(bookId:string,query:string,whole:boolean,limit:
  // FTS accelerates whole English terms; substring/Chinese searches scan chapters
  // on SQLite's worker and return one chapter at a time, never the whole book.
  const fts=whole&&/^[a-zA-Z0-9 ]+$/.test(query);
- const rows=db.getEachAsync<{section:number;title:string;body:string}>(fts?'SELECT section,title,body FROM passages WHERE book=? AND passages MATCH ? ORDER BY CAST(section AS INTEGER)':'SELECT section,title,body FROM passages WHERE book=? AND body LIKE ? ESCAPE \'\\\' ORDER BY CAST(section AS INTEGER)',bookId,fts?'"'+query.replace(/"/g,'""')+'"':'%'+query.replace(/[\\%_]/g,'\\$&')+'%');
+ const rows=db.getEachAsync<{section:number;href:string|null;title:string;body:string}>(fts?'SELECT section,href,title,body FROM passages WHERE book=? AND passages MATCH ? ORDER BY CAST(section AS INTEGER)':'SELECT section,href,title,body FROM passages WHERE book=? AND body LIKE ? ESCAPE \'\\\' ORDER BY CAST(section AS INTEGER)',bookId,fts?'"'+query.replace(/"/g,'""')+'"':'%'+query.replace(/[\\%_]/g,'\\$&')+'%');
  for await(const row of rows){
   if(signal.aborted)return [];
   for(const match of searchMatches(row.body,query,whole,limit-hits.length)){
-   hits.push({section:Number(row.section),offset:match.offset,text:match.text,before:row.body.slice(Math.max(0,match.offset-55),match.offset),after:row.body.slice(match.offset+match.text.length,match.offset+match.text.length+85),title:row.title});
+   hits.push({section:Number(row.section),href:row.href??undefined,offset:match.offset,text:match.text,before:row.body.slice(Math.max(0,match.offset-55),match.offset),after:row.body.slice(match.offset+match.text.length,match.offset+match.text.length+85),title:row.title});
    if(hits.length>=limit)return hits;
   }
  }

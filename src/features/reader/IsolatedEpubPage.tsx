@@ -4,7 +4,7 @@ import {useEpubFileSystem} from './useEpubFileSystem';
 import {locationCache} from './epubLocationCache';
 
 export type EpubPageController=ReturnType<typeof useReader>;
-type Props=Omit<ReaderProps,'fileSystem'> & {runtimeId:string;startupAnchor?:string|null;generateLocations?:boolean;navigationRevision?:number;navigationJavascript?:string;controllerRef:Ref<EpubPageController>};
+type Props=Omit<ReaderProps,'fileSystem'> & {runtimeId:string;startupAnchor?:string|null;generateLocations?:boolean;navigationRevision?:number;navigationJavascript?:string;controllerRef:Ref<EpubPageController>;onRenderProcessGone?:(event:{nativeEvent:{didCrash:boolean}})=>void};
 
 /** Providers follow document identity, not visual slot. Promoting a prepared
  * page keeps its WebView and selection/CFI state instead of mounting a reader. */

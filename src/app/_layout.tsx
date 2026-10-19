@@ -1,5 +1,5 @@
 import {FocusProvider} from '../features/reading-time/FocusProvider';
-import { Component, Suspense, type PropsWithChildren } from 'react';
+import { Component, Suspense, useEffect, type PropsWithChildren } from 'react';
 import { ActivityIndicator, Text, View } from 'react-native';
 import 'react-native-gesture-handler';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
@@ -10,8 +10,8 @@ import { StatusBar } from 'expo-status-bar';
 import { initializeDatabase } from '../db';
 import { SettingsProvider, useSettings } from '../features/settings/SettingsProvider';
 import { DictionaryContextProvider } from '../features/dictionary/DictionaryContext';
-import { EpubWarmupHost } from '../features/reader/EpubWarmupHost';
 import {traceReading} from '../features/reader/diagnostics';
+import {cleanupEpubPageRuntimes} from '../features/reader/useEpubFileSystem';
 
 class StorageBoundary extends Component<PropsWithChildren, { failed: boolean }> {
   state = { failed: false };
@@ -41,9 +41,10 @@ function Navigation() {
   </>;
 }
 export default function RootLayout() {
+  useEffect(()=>{cleanupEpubPageRuntimes();},[]);
   return <GestureHandlerRootView style={{ flex: 1 }}><StorageBoundary><Suspense fallback={<ActivityIndicator style={{ flex: 1 }} />}>
     <SQLiteProvider databaseName="app.db" onInit={initializeDatabase} useSuspense>
-      <SettingsProvider><DictionaryContextProvider><ReaderProvider><EpubWarmupHost /><FocusProvider><Navigation /></FocusProvider></ReaderProvider></DictionaryContextProvider></SettingsProvider>
+      <SettingsProvider><DictionaryContextProvider><ReaderProvider><FocusProvider><Navigation /></FocusProvider></ReaderProvider></DictionaryContextProvider></SettingsProvider>
     </SQLiteProvider>
   </Suspense></StorageBoundary></GestureHandlerRootView>;
 }

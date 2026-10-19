@@ -825,3 +825,55 @@
 - APK v2 签名通过，证书 SHA-256 fac61745dc0903786fb9ede62a962b399f7348f0bb6f899b8332667591033b9c，与前版一致。
 - 合并来源：https://github.com/JIUWANG123/quiet-reader-english-learning/pull/1
 - GitHub Release：https://github.com/JIUWANG123/quiet-reader-english-learning/releases/tag/v1.11.14
+
+## 2026-10-19 · EPUB 单 WebView 滑动候选（路线 A）
+- 所有 EPUB 阅读模式只挂载当前页面，不再创建 previous/next epub.js 实例；滑动模式不再使用三页 `NativePageStack`。
+- 滑动改由 `@epubjs-react-native/core` 自带的 `enableSwipe` 调用 `rendition.next/prev`，点击边缘、音量键和滚动模式继续走现有单页 `paper.turn` 路径。
+- 加载遮罩在恢复完成前拦截触摸，避免库自带手势在 rendition 未就绪时导航；滑动开始/结束复用现有 `gesture-start` / `gesture-release` 诊断。
+- 验证：TypeScript 类型检查通过，131 项自动测试通过，`npx expo export --platform android` 成功生成 Hermes bundle。
+- 尚未真机验证：需要重点检查慢速拖动是否触发、长按选句/选区手柄是否被 Fling 抢占，以及连续跨章节滑动后是否仍无 renderer crash。
+
+## 2026-10-19 · EPUB 重开页边界恢复
+- 真机诊断确认 `RESTORE_ANCHOR`：滚动模式保存的 CFI `epubcfi(/6/22!/4/22/3:156)` 在与手机视口对应的分页布局中落在页尾后 1 个字符；旧逻辑要求当前页完整包含 CFI，因此重试两次后报错。
+- 恢复条件改为：显式 `display(saved)` 已成功且当前页仍位于同一 spine 章节时，允许保存 CFI 落在新分页边界之外；仍拒绝落到其他章节的页一。
+- 用真实 Gone Girl EPUB 在 380×820 分页视口回放，确认恢复发出 `qr-position-ready` 而不是 `RESTORE_ANCHOR`。
+- 验证：TypeScript 类型检查通过，132 项自动测试通过。左右滑动暂无动画，按用户要求暂不处理。
+- 真机日志在模式切换/重开之间仍记录 renderer crash，但连续阅读期间没有 `webview-unresponsive`；作为下一轮独立问题跟踪。
+
+## 2026-10-19 · 章节快捷跳转与单页滑动动画
+- 章节快捷跳转传入 href 时不再按 CFI 比较，而是按 spine 章节匹配；真实 EPUB 的章节跳转和边界 CFI 恢复均返回 `qr-position-ready`，不再报 `RESTORE_ANCHOR`。
+- 真实测试中模式切换/重开仍会产生 Chromium 旧 renderer 日志，但当前 WebView 没有触发 `onRenderProcessGone`，也没有 `webview-unresponsive`；P1 以当前阅读会话稳定为通过标准。
+- 新增单 WebView 内的 150ms 方向滑入/淡入动画，遵守 `pageAnimation` 和系统减少动态效果设置；不增加第二个 epub.js 实例。
+- 验证：TypeScript 类型检查通过，135 项自动测试通过；真实 EPUB 浏览器回放确认新页动画样式从 24px/0.9 回到 0/1。
+
+## 2026-10-19 · 移除导入后的隐藏预热 WebView
+- 删除导入完成后的 `startEpubWarmup()` 调度和根布局中的 `EpubWarmupHost`；预热模块与 `cancelEpubWarmup` 路径一并移除。
+- 首次打开继续由当前阅读 WebView 生成 locations，并由 `locationCache` 复用后续结果；不再创建第二个 epub.js renderer。
+- 验证：TypeScript 类型检查通过，135 项自动测试通过；尚未实测大 EPUB 首次打开的冷启动耗时和导入后 60 秒稳定性。
+
+## 2026-10-19 · 导入核心测试与重导入数据保护
+- 新增 `importAsset.ts`，将 picker 之外的导入流程拆成可注入文件系统的核心；`import.ts` 仅保留 Expo picker、文件系统适配和诊断上下文。
+- 重新导入时先把旧书文件复制为 `.backup`，数据库事务成功后才删除备份；事务失败会恢复旧文件，不再出现“导入失败把原书删掉”的数据丢失风险。
+- 新增 4 项正式导入测试：TXT 成功、EPUB 成功、EPUB 索引失败降级、重新导入事务失败恢复旧文件。
+- 验证：TypeScript 类型检查通过，139 项自动测试通过；Android bundle 导出成功。
+- 真机反馈补充：Expo `File.copy` 默认不覆盖，重新导入时目标文件已存在会报错；备份和恢复复制均改为显式 `overwrite: true`，并新增成功重导入测试。
+- 8MB EPUB 复现 `RESTORE_ANCHOR`：保存 CFI 同章节但分页起点可能变化；恢复校验接受同章节页面，最终仍失败时回退到目标章节起点，避免直接弹定位失败。
+- 验证：TypeScript 类型检查通过，141 项自动测试通过；真实 8MB EPUB 的保存 CFI 回放返回 `qr-position-ready`。
+
+## 2026-10-19 · 搜索复用 EPUB 章节索引
+- 搜索不再重复解析 OPF；优先读取导入生成的 `<bookId>.epub-index.json` 和章节缓存，缺失时用 `buildEpubIndex` 的健壮回退重建。
+- `SearchHit` 增加 `href`，EPUB 跳转优先按 href 定位，找不到时回退到章节序号；TXT 行为不变。
+- 搜索缓存切换到 `search-v2.db`，避免旧的 `section` 语义和缺失 href 混用。
+- 验证：TypeScript 类型检查通过，141 项自动测试通过，Android bundle 导出成功；真机搜索跳转待验收。
+- 真机反馈 Gone Girl 有结果但无法定位：搜索索引 href 为 `OEBPS/Text/...`，epub.js spine href 为 `Text/...`。跳转现在按规范化路径的后缀匹配 spine 项，匹配不到才回退到章节序号。
+- 用 Gone Girl 的真实搜索命中回放，`OEBPS/Text/dedicatoria.xhtml` 正确匹配到 spine 的 `Text/dedicatoria.xhtml`，`qrSearchRange` 返回原文 `light`。
+- 真机二次反馈仍无法跳转，补充了搜索偏移容错：实际章节文本与索引 offset 不一致时，用命中词和前后文选择最近的唯一匹配；失败码会记录为 `SEARCH_SECTION` / `SEARCH_CHANGED` / `SEARCH_RANGE` / `SEARCH_FAILED`。
+- 用 Gone Girl 真实文本故意偏移 3 个字符回放，仍能恢复到原文 `light`。若真机仍失败，本轮按约定暂时搁置，并在总结文档记录待解决。
+
+## 2026-10-19 · P6 清理与交付状态
+- EPUB 预览池的 neighbor/rotation/invalidation 死代码已移除，`epubPool` 只保留当前文档和 serial。
+- 移除仅服务于旧三页栈的 `PageStackHandle.setReadiness`；TXT 继续使用 `NativePageStack` 的 `turn`。
+- 删除导入预热模块、`TxtReader.tsx.ok`；`qr-import.txt` 加入本地忽略。
+- 搜索跳转已通过真机验收；搜索偏移容错和 spine href 后缀匹配保留。
+- 验证：TypeScript 类型检查通过，140 项自动测试通过；最终 Android bundle 导出成功。
+- 已知限制：模式切换/退出时旧 WebView 卸载仍可能产生 Chromium renderer 日志，但当前 WebView 没有 `onRenderProcessGone`，阅读会话稳定；如要彻底消除，需要跨模式复用 WebView。
