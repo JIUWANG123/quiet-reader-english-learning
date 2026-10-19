@@ -8,7 +8,7 @@ import {pageTurnDecision} from './pageTurnDecision';
 import {pagePositionsFor,pageSurfacesFor} from './pageStack';
 
 export type PageDirection=1|-1;
-export type PageStackHandle={setReadiness:(source:string,previous:boolean,next:boolean)=>void;turn:(direction:PageDirection)=>boolean};
+export type PageStackHandle={turn:(direction:PageDirection)=>boolean};
 type GestureDetail={direction?:number;duration?:number;lockReason?:string;isAnimating?:boolean;previewReady?:boolean};
 type Props={onDiagnostic?:(event:'gesture-start'|'gesture-blocked'|'gesture-release',detail:GestureDetail)=>void;onBoundary?:(direction:PageDirection)=>void;controllerRef?:Ref<PageStackHandle>;animate?:boolean;pageIds?:Partial<Record<'previous'|'current'|'next',string>>;width?:number;height?:number;enabled?:boolean;pageKey?:string;previousReady?:boolean;nextReady?:boolean;onTurn:(direction:PageDirection)=>void;onInteraction?:(active:boolean)=>void;renderPage:(slot:'previous'|'current'|'next')=>ReactNode};
 
@@ -50,11 +50,7 @@ export function NativePageStack({onDiagnostic,onBoundary,controllerRef,animate=t
    })(nextPositions,reset);
  },[pageKey,ids.previous,ids.current,ids.next,width,height,offset,positions,busy,dragging,notify,epoch]);
  // Buttons and volume keys use exactly the same commit path as a swipe.
- useImperativeHandle(controllerRef,()=>({setReadiness(source,previous,next){
-  if(callbacks.current.pageKey!==source)return;
-  // A painted WebView must not wait behind a React render to unblock a swipe.
-  runOnUI((previous:boolean,next:boolean)=>{'worklet';availability.value={previous,next};})(previous,next);
- },turn(direction){
+ useImperativeHandle(controllerRef,()=>({turn(direction){
   if(busy.value||width<=0||!(direction===1?availability.value.next:availability.value.previous))return false;
   const token=++epoch.value;busy.value=true;notify(true);diagnostic('gesture-start',{direction,previewReady:true,isAnimating:false});settle(token);
   offset.value=withTiming(-direction*width,{duration:animate?210:0},finished=>{if(epoch.value!==token)return;if(finished)runOnJS(commit)(direction,token,pageKey);else{busy.value=false;runOnJS(notify)(false);}runOnJS(diagnostic)('gesture-release',{direction,previewReady:true,isAnimating:false,lockReason:finished?undefined:'CANCELLED'});});

@@ -4,7 +4,6 @@ import {searchLocator} from './searchLocator';
 import {SentenceActions} from './SentenceActions';
 import {epubVisualPosition} from './epubVisualPosition';
 import {prepareEpubResources} from './epubResources';
-import {cancelEpubWarmup} from '../../services/books/warmup';
 import {createEpubPool} from './epubPool';
 import {epubPreviewBoot} from './epubPreviewBoot';
 import {IsolatedEpubPage,type EpubPageController} from './IsolatedEpubPage';
@@ -90,7 +89,6 @@ function EpubReaderSession({ preparedSource,onToggleChrome,chapterRequest,onChap
   const activeId=useRef(pool.current.id);activeId.current=pool.current.id;
   const swipeStartedAt=useRef(0);
   const traceSwipeStart=(direction:1|-1)=>{swipeStartedAt.current=Date.now();traceReading('gesture-start',{bookId:book.id,cfi:lastLocation.current??undefined,mode:settings.readingMode,direction,isAnimating:false});};
-  useEffect(()=>{cancelEpubWarmup();},[book.id]);
   const foreground=useRef(true);
   const heartbeat=useRef({sequence:0,acknowledged:0,lastPingAt:0,missed:0,reportedAt:0});
   useEffect(()=>{
@@ -131,6 +129,7 @@ function EpubReaderSession({ preparedSource,onToggleChrome,chapterRequest,onChap
   const leaving=useRef(false);
   const leave=useCallback(()=>{if(leaving.current)return;leaving.current=true;injectJavascript('window.qrProgress?.capture(0);true;');setTimeout(()=>{if(leaving.current){leaving.current=false;onLeave();}},1800);},[injectJavascript,onLeave]);
   useEffect(()=>{if(ready)injectJavascript(epubPageMotion);},[ready,settings.pageAnimation,injectJavascript]);
+  useEffect(()=>{if(ready)injectJavascript(`window.qrPageAnimation=${settings.pageAnimation};true;`);},[ready,settings.pageAnimation,injectJavascript]);
   useEffect(()=>{if(ready)injectJavascript(`window.qrReader?.setReadingMode(${JSON.stringify(readingModeForBridge(settings.readingMode))});window.qrInteractionBlocked=${Boolean(keysBlocked||bookmarksOpen||aiSelection||showContents)};true;`);},[ready,settings.readingMode,keysBlocked,bookmarksOpen,aiSelection,showContents,injectJavascript]);
   const turn=(direction:number)=>{if(!ready||selectionActive||bookmarksOpen||keysBlocked||aiSelection||showContents)return;injectJavascript('window.qrReader?.cancelPendingSelection();true;');void paper.turn(direction,()=>{if(direction>0)goNext({keepScrollOffset:true});else goPrevious({keepScrollOffset:true});});};
   const flow = settings.readingMode === 'scroll' ? 'scrolled-doc' : 'paginated';
@@ -235,6 +234,10 @@ function EpubReaderSession({ preparedSource,onToggleChrome,chapterRequest,onChap
         enableSwipe={settings.readingMode==='swipe'}
         onSwipeLeft={()=>traceSwipeStart(1)}
         onSwipeRight={()=>traceSwipeStart(-1)}
+        onRenderProcessGone={event=>{
+          traceReading('webview-unresponsive',{bookId:book.id,cfi:lastLocation.current??undefined,mode:settings.readingMode,code:'RENDER_PROCESS_GONE'});
+          restored.current=false;setReady(false);setFailure('阅读器渲染进程已退出，原进度已保留。请重试恢复。');
+        }}
         enableSelection
         menuItems={selectionMenu}
         injectedJavascript={paintScript+epubVisualPosition+epubPreviewBoot(document.direction,document.revision??0,document.visualAnchor)+`window.qrInteractionBlocked=false;window.qrSelectionGuard&&(window.qrSelectionGuard.locked=false);window.qrReadingMode=${JSON.stringify(readingModeForBridge(settings.readingMode))};`+epubProgressBridge+readingBridgeScript+`if(!window.qrContentHook){window.qrContentHook=true;rendition.hooks.content.register(function(content){window.qrReader.attach(content.document,'epub:'+content.sectionIndex);});}rendition.getContents().forEach(function(content){window.qrReader.attach(content.document,'epub:'+content.sectionIndex);});true;`+epubParagraphBridge+`window.qrEpubParagraphs?.sync(${JSON.stringify(paragraphStates.current)});window.qrEpubParagraphs?.setVisible(${settings.paragraphTranslation});true;`+restoreEpubPosition(document.anchor,document.visualAnchor,settings.readingMode==='scroll'?'scroll':'paginated')}
@@ -269,7 +272,7 @@ function EpubReaderSession({ preparedSource,onToggleChrome,chapterRequest,onChap
           // Delayed events from a previous owner must never save or open cards.
           if(document.id!==activeId.current)return;
           if(data?.type==='qr-search-result'){if(!searchTimer.current)return;clearTimeout(searchTimer.current);searchTimer.current=null;setSearchOpen(false);setSearchError('');searchHighlight.current=(data as any).cfi;goToLocation((data as any).cfi);return;}
-          if(data?.type==='qr-search-error'){if(searchTimer.current)clearTimeout(searchTimer.current);searchTimer.current=null;Alert.alert('无法定位','原文位置未能核对，请重新搜索。');return;}
+          if(data?.type==='qr-search-error'){if(searchTimer.current)clearTimeout(searchTimer.current);searchTimer.current=null;traceReading('restore-error',{bookId:book.id,code:data.code||'SEARCH_FAILED'});Alert.alert('无法定位','原文位置未能核对，请重新搜索。');return;}
           if(data?.type==='qr-paragraph-layout'&&data.location?.start?.cfi){
             if(!restored.current)return;
             setPool(value=>({...value,current:{...value.current,location:data.location}}));
@@ -293,7 +296,6 @@ function EpubReaderSession({ preparedSource,onToggleChrome,chapterRequest,onChap
             }
             paper.settle((data as any).moved!==false);return;
           }
-          if (data?.type === 'qr-turn') {turn((data as any).direction);return;}
           if (data?.type === 'qr-toggle-ui') {onToggleChrome();return;}
           if (data?.type === 'qr-selection-state') {const active=Boolean((data as unknown as {active:boolean}).active);setSelectionActive(active);if(!active)setSelectedSentence(null);return;}
           if (data?.type === 'qr-selection-ready') {setSelectionTop((data as any).toolbarTop??8);setSelectedSentence(data);return;}
@@ -332,7 +334,7 @@ function EpubReaderSession({ preparedSource,onToggleChrome,chapterRequest,onChap
         </View>
       </View>
     </Modal>
-    {searchOpen?<BookSearch book={book} onClose={()=>{setSearchOpen(false);if(searchTimer.current)clearTimeout(searchTimer.current);searchTimer.current=null;}} onJump={hit=>{if(searchTimer.current)return;searchTimer.current=setTimeout(()=>{searchTimer.current=null;Alert.alert('定位超时','当前位置未改变，请重试。');},12000);injectJavascript(searchLocator+`(async function(){try{var section=book.spine.get(${hit.section});await section.load(book.load.bind(book));var range=window.qrSearchRange(section.document,${JSON.stringify(hit)});window.ReactNativeWebView.postMessage(JSON.stringify({type:'qr-search-result',cfi:section.cfiFromRange(range)}));}catch(error){window.ReactNativeWebView.postMessage(JSON.stringify({type:'qr-search-error'}));}})();true;`);}}/>:null}
+    {searchOpen?<BookSearch book={book} onClose={()=>{setSearchOpen(false);if(searchTimer.current)clearTimeout(searchTimer.current);searchTimer.current=null;}} onJump={hit=>{if(searchTimer.current)return;searchTimer.current=setTimeout(()=>{searchTimer.current=null;Alert.alert('定位超时','当前位置未改变，请重试。');},12000);injectJavascript(searchLocator+`(async function(){try{var section=(function(hit){function norm(value){try{var parts=[];decodeURIComponent(value||'').replace(/\\\\/g,'/').replace(/#.*$/,'').split('/').forEach(function(part){if(!part||part==='.')return;if(part==='..')parts.pop();else parts.push(part);});return parts.join('/');}catch{return '';}}var wanted=norm(hit.href);var items=(book.spine&&(book.spine.spineItems||book.spine.items))||[];var found=wanted&&items.find(function(item){var current=norm(item.href);return current===wanted||current.endsWith('/'+wanted)||wanted.endsWith('/'+current);});return found||book.spine.get(hit.href||hit.section)||book.spine.get(hit.section);})(${JSON.stringify(hit)});if(!section)throw Error('SEARCH_SECTION');await section.load(book.load.bind(book));var range=window.qrSearchRange(section.document,${JSON.stringify(hit)});window.ReactNativeWebView.postMessage(JSON.stringify({type:'qr-search-result',cfi:section.cfiFromRange(range)}));}catch(error){var code=error&&/^SEARCH_[A-Z]+$/.test(error.message)?error.message:'SEARCH_FAILED';window.ReactNativeWebView.postMessage(JSON.stringify({type:'qr-search-error',code:code}));}})();true;`);}}/>:null}
     {searchError?<Text style={{color:colors.text}}>{searchError}</Text>:null}
     {selectedSentence?<View style={{position:'absolute',top:selectionTop,left:8,right:8,zIndex:30,padding:6,backgroundColor:colors.surface,borderRadius:12}}><SentenceActions key={JSON.stringify(selectedSentence)} bookId={book.id} selection={selectedSentence} onTranslate={()=>{setAISelection({...selectedSentence,mode:'translate'});removeSelection();}} onMore={()=>onMarkSentence(selectedSentence)} onClose={()=>{removeSelection();setSelectedSentence(null);}}/></View>:null}
     {!failure ? <ReaderChrome visible={chromeVisible} style={{ position:"absolute",bottom:0,left:0,right:0,zIndex:20,backgroundColor:colors.background,padding: 12,paddingBottom:18, gap: 7, borderTopWidth: 1, borderTopColor: colors.border }}>

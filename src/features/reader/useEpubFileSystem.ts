@@ -2,7 +2,7 @@ import {prepareEpubTemplate} from './epubTemplate';
 import { useCallback, useState } from 'react';
 import * as FileSystem from 'expo-file-system/legacy';
 import {Directory,Paths} from 'expo-file-system';
-import {useMemo,useEffect} from 'react';
+import {useMemo} from 'react';
 import type { ReaderProps } from '@epubjs-react-native/core';
 
 type EpubFileSystem = ReturnType<ReaderProps['fileSystem']>;
@@ -10,6 +10,17 @@ type EpubFileSystem = ReturnType<ReaderProps['fileSystem']>;
 const writeAsStringAsync: EpubFileSystem['writeAsStringAsync'] = (uri, contents, options) => FileSystem.writeAsStringAsync(uri, prepareEpubTemplate(contents), {
   encoding: options?.encoding === 'base64' ? FileSystem.EncodingType.Base64 : FileSystem.EncodingType.UTF8,
 });
+
+/** Cold-start cleanup is safe because no WebView exists yet. Never delete these
+ * files while the process is alive: Chromium shares a renderer across readers,
+ * and removing a retired reader's runtime directory can still crash it after a
+ * new mode has mounted. */
+export function cleanupEpubPageRuntimes(){
+ const scope=globalThis as typeof globalThis & {__qrEpubRuntimeCleanup?:boolean};
+ if(scope.__qrEpubRuntimeCleanup)return;
+ scope.__qrEpubRuntimeCleanup=true;
+ try{const root=new Directory(Paths.cache,'epub-pages');if(root.exists)root.delete();}catch{/* Cache cleanup can wait for the OS. */}
+}
 
 // The upstream Expo adapter still imports removed root-level APIs. Keep its
 // contract while routing calls through Expo's supported legacy entry point.
@@ -23,12 +34,6 @@ export function useEpubFileSystem(namespace?:string,options?:{anchor?:string|nul
     folder.create({intermediates:true,idempotent:true});
     return folder.uri+'/';
   },[namespace]);
-  useEffect(()=>()=>{
-    if(!namespace||!runtimeDirectory)return;
-    // This path was constructed and validated above; it contains generated
-    // runtime files only, never imported books or the annotation database.
-    try{const folder=new Directory(runtimeDirectory);if(folder.exists)folder.delete();}catch{/* OS may still be releasing the WebView. */}
-  },[namespace,runtimeDirectory]);
   const [file, setFile] = useState<string | null>(null);
   const [progress, setProgress] = useState(0);
   const [downloading, setDownloading] = useState(false);

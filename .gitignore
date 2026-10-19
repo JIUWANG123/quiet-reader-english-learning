@@ -62,3 +62,4 @@ modules/*/android/.gradle/
 
 # Local diagnostic captures and temporary experiments
 /work/
+qr-import.txt

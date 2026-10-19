@@ -1,5 +1,4 @@
 import JSZip from 'jszip';
-import type {File} from 'expo-file-system';
 import {parseDocument,DomUtils} from 'htmlparser2';
 import type {Element} from 'domhandler';
 import {countWordOccurrences,mergeWordOccurrences} from './wordFrequency';
@@ -35,7 +34,9 @@ function archiveOrder(names:string[]){
   .sort((a,b)=>a.localeCompare(b,undefined,{numeric:true,sensitivity:'base'}));
 }
 
-export async function buildEpubIndex(file:File,cacheDir?:{file:(name:string)=>File}):Promise<EpubIndex>{
+type EpubArchive={arrayBuffer:()=>Promise<ArrayBuffer>};
+type EpubCacheFile={write:(value:string)=>void};
+export async function buildEpubIndex(file:EpubArchive,cacheDir?:{file:(name:string)=>EpubCacheFile}):Promise<EpubIndex>{
  const zip=await JSZip.loadAsync(await file.arrayBuffer());
  const names=Object.keys(zip.files).filter(name=>!zip.files[name].dir);
  const exact=new Map(names.map(name=>[name,zip.files[name]]));
