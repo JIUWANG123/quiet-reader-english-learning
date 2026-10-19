@@ -10,7 +10,7 @@ export const epubPageMotion = `
  container.addEventListener('scroll',function(){if(guard.locked&&rendition._layout.flow()==='paginated'){container.scrollLeft=guard.left;container.scrollTop=guard.top;}});
  async function turn(direction){
   window.qrReader?.cancelPendingSelection();
-  if(guard.locked||rendition.getContents().some(function(c){var s=c.window.getSelection();return s&&!s.isCollapsed;})){window.ReactNativeWebView.postMessage(JSON.stringify({type:'qr-turn-settled',moved:false}));return;}
+  if(window.qrInteractionBlocked||guard.locked||rendition.getContents().some(function(c){var s=c.window.getSelection();return s&&!s.isCollapsed;})){window.ReactNativeWebView.postMessage(JSON.stringify({type:'qr-turn-settled',moved:false}));return;}
   if(busy){pending=direction;return;}
   var location=rendition.currentLocation();
   if(location&&((direction>0&&location.atEnd)||(direction<0&&location.atStart))){window.ReactNativeWebView.postMessage(JSON.stringify({type:"qr-turn-settled",moved:false}));return;}

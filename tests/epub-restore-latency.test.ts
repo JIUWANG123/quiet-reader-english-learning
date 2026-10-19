@@ -22,3 +22,19 @@ test('scroll restore accepts epub.js visible location after display settles',asy
  vm.runInNewContext((restoreEpubPosition as any)('saved-cfi',undefined,'scroll'),context);await new Promise<void>(resolve=>setImmediate(resolve));
  assert.equal(sent[0]?.type,'qr-position-ready');
 });
+
+test('paginated restore accepts a saved CFI just beyond a repaginated page edge in the same section',async()=>{
+ const sent:any[]=[];let displays=0;
+ const saved='epubcfi(/6/22!/4/22/3:156)';
+ const location={start:{cfi:'epubcfi(/6/22!/4/12/5:335)',index:10},end:{cfi:'epubcfi(/6/22!/4/22/3:155)',index:10}};
+ const context:any={
+  setTimeout,clearTimeout,
+  ReactNativeWebView:{postMessage:(s:string)=>sent.push(JSON.parse(s))},
+  book:{spine:{get:()=>({index:10})}},
+  rendition:{display:async()=>{displays++;},manager:{currentLocation:async()=>[1]},located:()=>location},
+  ePub:{CFI:{prototype:{compare:(a:string,b:string)=>a.localeCompare(b)}}}
+ };context.window=context;
+ vm.runInNewContext(restoreEpubPosition(saved),context);await new Promise<void>(resolve=>setImmediate(resolve));
+ assert.equal(displays,1);
+ assert.equal(sent[0]?.type,'qr-position-ready');
+});

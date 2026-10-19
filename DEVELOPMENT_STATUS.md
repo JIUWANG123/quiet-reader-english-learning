@@ -825,3 +825,17 @@
 - APK v2 签名通过，证书 SHA-256 fac61745dc0903786fb9ede62a962b399f7348f0bb6f899b8332667591033b9c，与前版一致。
 - 合并来源：https://github.com/JIUWANG123/quiet-reader-english-learning/pull/1
 - GitHub Release：https://github.com/JIUWANG123/quiet-reader-english-learning/releases/tag/v1.11.14
+
+## 2026-10-19 · EPUB 单 WebView 滑动候选（路线 A）
+- 所有 EPUB 阅读模式只挂载当前页面，不再创建 previous/next epub.js 实例；滑动模式不再使用三页 `NativePageStack`。
+- 滑动改由 `@epubjs-react-native/core` 自带的 `enableSwipe` 调用 `rendition.next/prev`，点击边缘、音量键和滚动模式继续走现有单页 `paper.turn` 路径。
+- 加载遮罩在恢复完成前拦截触摸，避免库自带手势在 rendition 未就绪时导航；滑动开始/结束复用现有 `gesture-start` / `gesture-release` 诊断。
+- 验证：TypeScript 类型检查通过，131 项自动测试通过，`npx expo export --platform android` 成功生成 Hermes bundle。
+- 尚未真机验证：需要重点检查慢速拖动是否触发、长按选句/选区手柄是否被 Fling 抢占，以及连续跨章节滑动后是否仍无 renderer crash。
+
+## 2026-10-19 · EPUB 重开页边界恢复
+- 真机诊断确认 `RESTORE_ANCHOR`：滚动模式保存的 CFI `epubcfi(/6/22!/4/22/3:156)` 在与手机视口对应的分页布局中落在页尾后 1 个字符；旧逻辑要求当前页完整包含 CFI，因此重试两次后报错。
+- 恢复条件改为：显式 `display(saved)` 已成功且当前页仍位于同一 spine 章节时，允许保存 CFI 落在新分页边界之外；仍拒绝落到其他章节的页一。
+- 用真实 Gone Girl EPUB 在 380×820 分页视口回放，确认恢复发出 `qr-position-ready` 而不是 `RESTORE_ANCHOR`。
+- 验证：TypeScript 类型检查通过，132 项自动测试通过。左右滑动暂无动画，按用户要求暂不处理。
+- 真机日志在模式切换/重开之间仍记录 renderer crash，但连续阅读期间没有 `webview-unresponsive`；作为下一轮独立问题跟踪。

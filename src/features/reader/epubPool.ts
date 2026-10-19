@@ -1,7 +1,10 @@
 import type {Location} from '@epubjs-react-native/core';
 export type EpubDocument={id:string;anchor:string|null;direction:-1|0|1;revision?:number;visualAnchor?:Location;location?:Location;boundary?:boolean;retries?:number};
 export type EpubPool={previous:EpubDocument|null;current:EpubDocument;next:EpubDocument|null;serial:number};
-export function shouldPreloadEpubNeighbors(mode:'scroll'|'tap'|'swipe'):boolean{return mode==='swipe';}
+/** Every EPUB reading mode keeps exactly one WebView. A second hidden or
+ * adjacent epub.js instance is enough to push the shared renderer out of memory
+ * on Android, so neighbours are never pre-rendered. */
+export function shouldPreloadEpubNeighbors(_mode:'scroll'|'tap'|'swipe'):boolean{return false;}
 export function createEpubPool(anchor:string|null,serial=0):EpubPool{return{current:{id:String(serial),anchor,direction:0},previous:null,next:null,serial:serial+1};}
 function neighbors(pool:EpubPool):EpubPool{
  const location=pool.current.location;if(!location)return pool;
